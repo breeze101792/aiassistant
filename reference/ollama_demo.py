@@ -1,3 +1,4 @@
+#!/bin/env python3
 import ollama
 from duckduckgo_search import DDGS
 
@@ -11,13 +12,24 @@ def web_search(query: str, num_results: int = 3) -> str:
 
 def main():
     # Initialize chat with system message (agent configuration)
+#     messages = [{
+#         'role': 'system',
+#         'content': """You are a helpful AI assistant with web access. Follow these rules:
+# 1. Use web search when you need current information
+# 2. Be concise and factual
+# 3. When using search results, cite sources using [number] notation
+# 4. If unsure, say you don't know"""
+#     }]
     messages = [{
         'role': 'system',
-        'content': """You are a helpful AI assistant with web access. Follow these rules:
+        'content': """Today is 2025/03/03. You are a helpful AI assistant with serveral APIs access. Follow these rules:
 1. Use web search when you need current information
 2. Be concise and factual
 3. When using search results, cite sources using [number] notation
-4. If unsure, say you don't know"""
+4. If unsure, say you don't know
+Api Usage: if you have the api request, you should check if frst.
+1. 'Search:query string'
+"""
     }]
 
     while True:
@@ -37,11 +49,14 @@ def main():
 
             # Add user message to context
             messages.append({'role': 'user', 'content': user_input})
+            print(f"\n[Debug]Message: " + messages.__str__())
 
             # Generate response
             response = ollama.chat(
-                # model='mistral',  # Change to your preferred model
-                model='deepseek-r1:latest',  # Change to your preferred model
+                model='mistral',  # Change to your preferred model
+                # model='deepseek-r1:latest',  # Change to your preferred model
+                # model='deepseek-r1:14b',  # Change to your preferred model
+                # model='qwen2.5:1.5b',  # Change to your preferred model
                 messages=messages,
                 options={'temperature': 0.7}
             )

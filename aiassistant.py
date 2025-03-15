@@ -10,11 +10,12 @@ from utility.debug import *
 
 # Core
 from core.settings import *
+from core.core import *
 
 psettings = Setting()
 
 def main():
-    parser = OptionParser(usage='Usage: LlamaAgent [options] ......')
+    parser = OptionParser(usage='Usage: aiassistant [options] ......')
     parser.add_option("-d", "--debug", dest="debug",
                     help="debug mode on!!", action="store_true")
     parser.add_option("-m", "--model", dest="model_name",
@@ -33,7 +34,9 @@ def main():
 
     # open file
     try:
-        dbg_print("Hello. It's your ai assistant.")
+        core = Core()
+        core.initialize()
+        core.start()
 
         dbg_print(psettings.Message.Exit)
     except (OSError, KeyboardInterrupt):
