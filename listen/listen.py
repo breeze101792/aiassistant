@@ -8,15 +8,17 @@ from utility.debug import *
 class Listen:
     HOTWORDS = ["hey assistant", "hi mark", "hey mark"]
     SILENCE_TIMEOUT = 20  # 若超過 n 秒沒偵測到語音，則回到 Hotword 偵測模式
-    def __init__(self, device_idx = 0):
-        self.device_idx = device_idx
-
+    def __init__(self, device_index = 0):
+        self.device_index = device_index
         self.listen_queue = queue.Queue()
         self.flag_run = False
         self.service_thread = None
         self.is_waiting = False
 
         self.last_speech_time = time.time()  # 記錄最後一次辨識成功的時間
+
+        self.recognizer = None
+        self.microphone = None
 
     def wait(self):
         self.last_speech_time = time.time()
@@ -39,25 +41,29 @@ class Listen:
     def __service(self):
         dbg_info("Listen Module Service thread start")
         self.flag_run = True
+
+        # init sr
+        self.recognizer = sr.Recognizer()
+        self.microphone = sr.Microphone(device_index=self.device_index)
         """主迴圈，持續等待喚醒詞並進入語音模式"""
         while self.flag_run:
-            if self.listen_for_hotword(self.device_idx):
-                self.listen_for_speech(self.device_idx)
+            if self.listen_for_hotword():
+                self.listen_for_speech()
         dbg_info("Listen Module Service thread end")
 
-    def listen_for_hotword(self, device_index=0):
+    def listen_for_hotword(self):
         """Listen for a wake word from the list of HOTWORDS"""
-        recognizer = sr.Recognizer()
-        mic = sr.Microphone(device_index=device_index)
+        # recognizer = sr.Recognizer()
+        # mic = sr.Microphone(device_index=device_index)
 
-        with mic as source:
-            dbg_info(f"Waiting for hotword at device {device_index}...")
-            recognizer.adjust_for_ambient_noise(source)
+        with self.microphone as source:
+            dbg_info(f"Waiting for hotword")
+            self.recognizer.adjust_for_ambient_noise(source)
 
             while True:
                 try:
-                    audio = recognizer.listen(source)
-                    text = recognizer.recognize_google(audio).lower()
+                    audio = self.recognizer.listen(source)
+                    text = self.recognizer.recognize_google(audio).lower()
                     dbg_trace(f"Recognized: {text}")
 
                     # ✅ Check if any hotword is detected
@@ -71,21 +77,21 @@ class Listen:
                     return False
 
 
-    def listen_for_speech(self, device_index=0):
+    def listen_for_speech(self):
         """在 Hotword 被觸發後，開始持續監聽語音"""
-        recognizer = sr.Recognizer()
-        mic = sr.Microphone(device_index=device_index)
+        # recognizer = sr.Recognizer()
+        # mic = sr.Microphone(device_index=device_index)
 
         self.last_speech_time = time.time()  # 記錄最後一次辨識成功的時間
 
-        with mic as source:
-            recognizer.adjust_for_ambient_noise(source)  # 降低背景雜音
+        with self.microphone as source:
+            self.recognizer.adjust_for_ambient_noise(source)  # 降低背景雜音
             dbg_info("🔊 Enter listen mode, please speak...")
 
             while True:
                 try:
-                    audio = recognizer.listen(source, timeout=3)  # 限制錄音時間
-                    text = recognizer.recognize_google(audio).lower()
+                    audio = self.recognizer.listen(source, timeout=3)  # 限制錄音時間
+                    text = self.recognizer.recognize_google(audio).lower()
 
                     # 如果成功辨識到語音
                     if text:

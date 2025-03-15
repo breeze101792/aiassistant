@@ -7,6 +7,7 @@ import queue
 # Local file
 from utility.debug import *
 from listen.listen import *
+from think.think import *
 
 class Core:
     def __init__(self):
@@ -120,18 +121,21 @@ class Core:
         dbg_info('Think Service Start.')
         # self.flag_service_running = True
         # TODO, change it to real life settings.
+        self.think.start()
 
         while True:
             try:
-
-                self.flag_think = True
                 input_text = self.listen_queue.get()
-                dbg_info(f"User: {input_text}")
-                # TODO, We will thinkg here.
-                ###############################################################
-                time.sleep(2)
+                # input_text = "HI, how are u."
+                if input_text is not None:
+                    self.flag_think = True
+                    dbg_info(f"User: {input_text}")
+                    # TODO, We will thinkg here.
+                    ###############################################################
+                    self.think.send_message(input_text)
 
-                self.flag_think = False
+                    self.flag_think = False
+
             except KeyboardInterrupt:
                 dbg_warning("Keyboard Interupt.")
                 self.flag_service_running = False
@@ -153,7 +157,6 @@ class Core:
         self.flag_service_running = False
         dbg_warning('Think Service End.')
     def __listen_service(self):
-        dbg_info('Listen Service Start.')
         # self.flag_service_running = True
         # TODO, change it to real life settings.
         # service_interval_time=5
@@ -161,6 +164,7 @@ class Core:
         self.listen.start()
         # dbg_trace('finished listen hearing')
 
+        dbg_info('Listen Service Start.')
         # do the evaluation on every service_interval_time.
         while True:
             try:
@@ -203,9 +207,9 @@ class Core:
         dbg_info('Core start initialize.')
         try:
             # modules
-            self.listen = Listen(device_idx=5)
+            self.listen = Listen(device_index=5)
             self.speak = None
-            self.think = None
+            self.think = Think()
 
             self.listen_queue = queue.Queue()
             self.speak_queue = queue.Queue()
@@ -243,6 +247,11 @@ class Core:
             self.listen_service_thread = threading.Thread(target=self.__listen_service)
             self.listen_service_thread.start()
             thread_list.append(self.listen_service_thread)
+
+            # speak
+            # self.speak_service_thread = threading.Thread(target=self.__speak_service)
+            # self.speak_service_thread.start()
+            # thread_list.append(self.speak_service_thread)
 
             # Monitor Thread
             # self.heatbeat_thread = threading.Thread(target=self.__heatbeat, daemon=True)
