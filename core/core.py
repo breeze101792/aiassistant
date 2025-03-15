@@ -7,6 +7,7 @@ import queue
 # Local file
 from utility.debug import *
 from listen.listen import *
+from speak.speak import *
 from think.think import *
 
 class Core:
@@ -132,7 +133,9 @@ class Core:
                     dbg_info(f"User: {input_text}")
                     # TODO, We will thinkg here.
                     ###############################################################
-                    self.think.send_message(input_text)
+                    assistant_message = self.think.send_message(input_text)
+                    # dbg_print(f"Assistant: {assistant_message}")
+                    self.speak_queue.put(assistant_message)
 
                     self.flag_think = False
 
@@ -202,13 +205,56 @@ class Core:
                 time.sleep(self.def_threading_delay)
 
         self.flag_service_running = False
-        dbg_warning('Service End.')
+        dbg_warning('Listen Service End.')
+    def __speak_service(self):
+        # self.flag_service_running = True
+        # TODO, change it to real life settings.
+        # service_interval_time=5
+        # dbg_trace('start listen hearing')
+        self.speak.start()
+        # dbg_trace('finished listen hearing')
+
+        dbg_info('Speak Service Start.')
+        # do the evaluation on every service_interval_time.
+        while True:
+            try:
+                # dbg_trace('Service running in every {}s'.format(service_interval_time))
+
+                # dbg_info(f"Listen Queue: {self.listen.listen_queue.qsize()}, {self.listen.listen_queue.empty()}")
+                if self.speak_queue.empty() is False:
+                    speach_text = self.speak_queue.get()
+                    self.speak.speak(speach_text)
+
+                    self.listen.wait()
+
+                # dbg_info("Tracking List: " + tracking_list.__str__())
+                # time.sleep(service_interval_time)
+            except KeyboardInterrupt:
+                dbg_warning("Keyboard Interupt.")
+                self.flag_service_running = False
+            except Exception as e:
+                dbg_error(e)
+
+                traceback_output = traceback.format_exc()
+                dbg_error(traceback_output)
+                self.flag_service_running = False
+
+            finally:
+                # Finalize service thread.
+                if self.flag_core_running is False or self.flag_service_running is False:
+                    dbg_trace('Finalize service thread.')
+                    break
+
+                time.sleep(self.def_threading_delay)
+
+        self.flag_service_running = False
+        dbg_warning('Speak Service End.')
     def initialize(self):
         dbg_info('Core start initialize.')
         try:
             # modules
             self.listen = Listen(device_index=5)
-            self.speak = None
+            self.speak = Speak()
             self.think = Think()
 
             self.listen_queue = queue.Queue()
@@ -249,9 +295,9 @@ class Core:
             thread_list.append(self.listen_service_thread)
 
             # speak
-            # self.speak_service_thread = threading.Thread(target=self.__speak_service)
-            # self.speak_service_thread.start()
-            # thread_list.append(self.speak_service_thread)
+            self.speak_service_thread = threading.Thread(target=self.__speak_service)
+            self.speak_service_thread.start()
+            thread_list.append(self.speak_service_thread)
 
             # Monitor Thread
             # self.heatbeat_thread = threading.Thread(target=self.__heatbeat, daemon=True)

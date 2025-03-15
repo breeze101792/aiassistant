@@ -19,7 +19,8 @@ class Think:
 
         if agent_description is None:
             agent_description = """
-Your name is Mark, a real word helpful assistant.
+Your name is Mark, a real word helpful assistant. Replay user only with English or Chinese Traditional, don't do it both.
+
                             """
         self.history.append({"role": "user", "content": agent_description})
         self.history.append({"role": "assistant", "content": "ok"})
@@ -49,13 +50,14 @@ Your name is Mark, a real word helpful assistant.
             "stream": self.stream_mode
         }
 
+        assistant_message = None
 
         try:
             if self.stream_mode:
                 with requests.post(self.api_url + "generate", json=payload, stream=True) as response:
 
                     if response.status_code == 200:
-                        dbg_print(f"Assistant: ", end="")
+                        # dbg_print(f"Assistant: ", end="")
                         assistant_message = ""
                         final_json        = {
                             "usage": {
@@ -71,8 +73,8 @@ Your name is Mark, a real word helpful assistant.
                                     final_json = response_json
 
                                     content_chunk = response_json["choices"][0]["content"]
-                                    sys.stdout.write(content_chunk)
-                                    sys.stdout.flush()
+                                    # sys.stdout.write(content_chunk)
+                                    # sys.stdout.flush()
                                     assistant_message += content_chunk
                                 except json.JSONDecodeError:
                                     dbg_error(f"Error detecting JSON response.")
@@ -80,13 +82,13 @@ Your name is Mark, a real word helpful assistant.
                         if self.verbose == True:
                             tokens_per_second = final_json["usage"]["tokens_per_second"]
                             completion_tokens = final_json["usage"]["completion_tokens"]
-                            dbg_print(f"\n\nTokens per second: {tokens_per_second}")
-                            dbg_print(f"Number of tokens  : {completion_tokens}")
+                            dbg_debug(f"\n\nTokens per second: {tokens_per_second}")
+                            dbg_debug(f"Number of tokens  : {completion_tokens}")
 
                         self.history.append({"role": "assistant", "content": assistant_message})
 
                         # Return to line after last token
-                        dbg_print("\n")
+                        # dbg_print("\n")
 
                     else:
                         dbg_error(f"Streaming error: {response.status_code} - {response.text}")
@@ -97,13 +99,13 @@ Your name is Mark, a real word helpful assistant.
                     response_json = response.json()
                     assistant_message = response_json["choices"][0]["content"]
 
-                    dbg_print(f"Assistant: {assistant_message}")
+                    # dbg_print(f"Assistant: {assistant_message}")
 
                     if self.verbose == True:
                             tokens_per_second = final_json["usage"]["tokens_per_second"]
                             completion_tokens = final_json["usage"]["completion_tokens"]
-                            dbg_print(f"\n\nTokens per second: {tokens_per_second}")
-                            dbg_print(f"Number of Tokens  : {completion_tokens}")
+                            dbg_debug(f"\n\nTokens per second: {tokens_per_second}")
+                            dbg_debug(f"Number of Tokens  : {completion_tokens}")
 
                     self.history.append({"role": "assistant", "content": assistant_message})
                 else:
@@ -111,6 +113,8 @@ Your name is Mark, a real word helpful assistant.
 
         except requests.RequestException as e:
             dbg_error(f"Query error: {e}")
+
+        return assistant_message
 
     # Function to change model if the old model loaded is not the same one to execute
     def switch_model(self, new_model):
