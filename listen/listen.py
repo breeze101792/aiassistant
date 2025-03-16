@@ -6,7 +6,7 @@ import threading
 from utility.debug import *
 
 class Listen:
-    HOTWORDS = ["hey assistant", "hi mark", "hey mark"]
+    HOTWORDS = ["hey assistant", "hi mark", "hey mark", "hi"]
     SILENCE_TIMEOUT = 20  # 若超過 n 秒沒偵測到語音，則回到 Hotword 偵測模式
     def __init__(self, device_index = 0):
         self.device_index = device_index

@@ -7,4 +7,5 @@ class Speak:
     def start(self):
         pass
     def speak(self, message):
-        dbg_info(message)
+        if message is not "":
+            dbg_print(message)

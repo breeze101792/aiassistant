@@ -123,21 +123,36 @@ class Core:
         # self.flag_service_running = True
         # TODO, change it to real life settings.
         self.think.start()
+        blocking_mode = True
+        blocking_mode = False
 
+        # input_text = "HI, how are u. today"
         while True:
             try:
-                input_text = self.listen_queue.get()
-                # input_text = "HI, how are u."
+                if not self.listen_queue.empty():
+                    input_text = self.listen_queue.get()
+                else:
+                    input_text = None
+
                 if input_text is not None:
                     self.flag_think = True
                     dbg_info(f"User: {input_text}")
-                    # TODO, We will thinkg here.
-                    ###############################################################
-                    assistant_message = self.think.send_message(input_text)
-                    # dbg_print(f"Assistant: {assistant_message}")
-                    self.speak_queue.put(assistant_message)
+                    if blocking_mode:
+                        assistant_message = self.think.think(input_text)
+                        # dbg_print(f"Assistant: {assistant_message}")
+                        self.speak_queue.put(assistant_message)
+                    else:
+                        self.think.think(input_text, block=False)
+
+                    self.listen.wait()
 
                     self.flag_think = False
+
+                if self.think.result_queue.empty() is False and blocking_mode is False :
+                    result_text = self.think.result_queue.get()
+                    self.speak_queue.put(result_text)
+                # input_text = None
+                # time.sleep(5)
 
             except KeyboardInterrupt:
                 dbg_warning("Keyboard Interupt.")

@@ -2,6 +2,8 @@ import requests
 import json
 import sys
 import os
+import threading
+import queue
 
 from utility.debug import *
 
@@ -12,6 +14,8 @@ class Think:
         self.stream_mode = True
         self.verbose = False
 
+        self.result_queue = queue.Queue()
+        self.service_thread = None
 
         port = "8080"
         self.api_url = f"http://127.0.0.1:{port}/"
@@ -36,9 +40,20 @@ Your name is Mark, a real word helpful assistant. Replay user only with English 
             return response.status_code
         except:
             return 500
+
+    def think(self, message, block = True):
+        self.result_queue = queue.Queue()
+
+        if block is False:
+            service_thread = threading.Thread(target=self.send_message, args=(message, ), daemon=True)
+            service_thread.start()
+            return None
+        else:
+            return self.send_message(message)
+
     # Sends a message to the loaded model and displays the response.
     def send_message(self, message):
-        # dbg_info(f"Assistant: {message}")
+        # dbg_info(f"User: {message}")
 
         self.history.append({"role": "user", "content": message})
 
@@ -51,13 +66,15 @@ Your name is Mark, a real word helpful assistant. Replay user only with English 
         }
 
         assistant_message = None
+        if not self.result_queue.empty():
+            self.result_queue.queue.clear()
 
         try:
             if self.stream_mode:
                 with requests.post(self.api_url + "generate", json=payload, stream=True) as response:
 
                     if response.status_code == 200:
-                        # dbg_print(f"Assistant: ", end="")
+                        dbg_print(f"Assistant: ", end="")
                         assistant_message = ""
                         final_json        = {
                             "usage": {
@@ -66,6 +83,7 @@ Your name is Mark, a real word helpful assistant. Replay user only with English 
                             }
                         }
 
+                        tmp_buf = ""
                         for line in response.iter_lines(decode_unicode=True):
                             if line:
                                 try:
@@ -76,8 +94,15 @@ Your name is Mark, a real word helpful assistant. Replay user only with English 
                                     # sys.stdout.write(content_chunk)
                                     # sys.stdout.flush()
                                     assistant_message += content_chunk
+                                    tmp_buf += content_chunk
+                                    if '.' in tmp_buf or '?' in tmp_buf or '!' in tmp_buf:
+                                        # dbg_print(f"{tmp_buf}")
+                                        self.result_queue.put(tmp_buf)
+                                        tmp_buf = ""
+
                                 except json.JSONDecodeError:
                                     dbg_error(f"Error detecting JSON response.")
+                        self.result_queue.put(tmp_buf)
 
                         if self.verbose == True:
                             tokens_per_second = final_json["usage"]["tokens_per_second"]
@@ -98,6 +123,7 @@ Your name is Mark, a real word helpful assistant. Replay user only with English 
                 if response.status_code == 200:
                     response_json = response.json()
                     assistant_message = response_json["choices"][0]["content"]
+                    self.result_queue.get(response_json["choices"][0]["content"])
 
                     # dbg_print(f"Assistant: {assistant_message}")
 
