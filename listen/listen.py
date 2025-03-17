@@ -5,8 +5,26 @@ import threading
 
 from utility.debug import *
 
+###################################################
+import wave
+from funasr import AutoModel
+
+# 🔹 設定 FunASR 模型變數
+ASR_MODEL = "paraformer-zh"  # 語音識別模型
+VAD_MODEL = "fsmn-vad"       # 語音活動檢測（可選）
+PUNC_MODEL = "ct-punc"       # 標點符號模型（可選）
+
+def save_audio(audio_data, filename="temp.wav"):
+    """將 SpeechRecognition 錄製的音訊存為 WAV 檔案"""
+    with wave.open(filename, "wb") as wf:
+        wf.setnchannels(1)  # 單聲道
+        wf.setsampwidth(2)  # 16-bit PCM
+        wf.setframerate(16000)  # 16kHz 取樣率
+        wf.writeframes(audio_data.get_wav_data(convert_rate=16000))
+###################################################
+
 class Listen:
-    HOTWORDS = ["hey assistant", "hi mark", "hey mark", "hi"]
+    HOTWORDS = ["hey assistant", "hi mark", "hey mark", "ok google", "hi ducky"]
     SILENCE_TIMEOUT = 20  # 若超過 n 秒沒偵測到語音，則回到 Hotword 偵測模式
     def __init__(self, device_index = 0):
         self.device_index = device_index
@@ -19,6 +37,9 @@ class Listen:
 
         self.recognizer = None
         self.microphone = None
+
+        # self.model = AutoModel(model=ASR_MODEL, vad_model=VAD_MODEL, punc_model=PUNC_MODEL, disable_update=True, disable_log=True, disable_pbar=True)
+        self.model = None
 
     def wait(self):
         self.last_speech_time = time.time()
@@ -35,6 +56,8 @@ class Listen:
             dbg_info("Microphone with name \"{1}\" found for `Microphone(device_index={0})`".format(index, name))
 
     def start(self):
+        self.model = AutoModel(model=ASR_MODEL, vad_model=VAD_MODEL, punc_model=PUNC_MODEL, disable_update=True, disable_log=True, disable_pbar=True)
+        
         self.service_thread = threading.Thread(target=self.__service, daemon=True)
         self.service_thread.start()
 
@@ -90,8 +113,18 @@ class Listen:
 
             while True:
                 try:
-                    audio = self.recognizer.listen(source, timeout=3)  # 限制錄音時間
-                    text = self.recognizer.recognize_google(audio).lower()
+                    # audio = self.recognizer.listen(source, timeout=3)  # 限制錄音時間
+                    audio = self.recognizer.listen(source, phrase_time_limit=10)  # 限制錄音時間
+
+                    # 存儲錄製的音訊
+                    save_audio(audio, "temp.wav")
+
+                    # 使用 FunASR 進行語音辨識
+                    result = self.model.generate("temp.wav")
+                    # 如果成功辨識到語音
+                    text = result[0]['text']
+
+                    # text = self.recognizer.recognize_google(audio).lower()
 
                     # 如果成功辨識到語音
                     if text:

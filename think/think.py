@@ -91,11 +91,11 @@ Your name is Mark, a real word helpful assistant. Replay user only with English 
                                     final_json = response_json
 
                                     content_chunk = response_json["choices"][0]["content"]
-                                    # sys.stdout.write(content_chunk)
-                                    # sys.stdout.flush()
+                                    sys.stdout.write(content_chunk)
+                                    sys.stdout.flush()
                                     assistant_message += content_chunk
                                     tmp_buf += content_chunk
-                                    if '.' in tmp_buf or '?' in tmp_buf or '!' in tmp_buf:
+                                    if '.' in tmp_buf or '?' in tmp_buf or '!' in tmp_buf or "。" in tmp_buf:
                                         # dbg_print(f"{tmp_buf}")
                                         self.result_queue.put(tmp_buf)
                                         tmp_buf = ""
@@ -113,7 +113,7 @@ Your name is Mark, a real word helpful assistant. Replay user only with English 
                         self.history.append({"role": "assistant", "content": assistant_message})
 
                         # Return to line after last token
-                        # dbg_print("\n")
+                        dbg_print("\n")
 
                     else:
                         dbg_error(f"Streaming error: {response.status_code} - {response.text}")
@@ -125,7 +125,7 @@ Your name is Mark, a real word helpful assistant. Replay user only with English 
                     assistant_message = response_json["choices"][0]["content"]
                     self.result_queue.get(response_json["choices"][0]["content"])
 
-                    # dbg_print(f"Assistant: {assistant_message}")
+                    dbg_print(f"Assistant: {assistant_message}")
 
                     if self.verbose == True:
                             tokens_per_second = final_json["usage"]["tokens_per_second"]
@@ -137,6 +137,7 @@ Your name is Mark, a real word helpful assistant. Replay user only with English 
                 else:
                     dbg_error(f"Query error: {response.status_code} - {response.text}")
 
+            dbg_info("Finished generation.")
         except requests.RequestException as e:
             dbg_error(f"Query error: {e}")
 

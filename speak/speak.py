@@ -8,4 +8,5 @@ class Speak:
         pass
     def speak(self, message):
         if message is not "":
-            dbg_print(message)
+            # dbg_print(message)
+            pass
