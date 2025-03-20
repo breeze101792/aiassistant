@@ -49,11 +49,11 @@ class Core:
         pass
 
     def __heatbeat(self):
-        dbg_info('Heatbeat Start.')
         self.flag_heatbeat_running = True
 
         # TODO Impl heatbeat
         heart_beat_interval_time=60
+        dbg_info('Heatbeat Start.')
         while self.flag_core_running and self.flag_heatbeat_running:
             try:
                 # dbg_trace('heart beatting every {}s'.format(heart_beat_interval_time))
@@ -118,14 +118,13 @@ class Core:
         self.flag_service_running = False
         dbg_warning('Service End.')
     def __think_service(self):
-
-        dbg_info('Think Service Start.')
         # self.flag_service_running = True
         # TODO, change it to real life settings.
         self.think.start()
         blocking_mode = True
         blocking_mode = False
 
+        dbg_info('Think Service Start.')
         # input_text = "HI, how are u. today"
         while True:
             try:
@@ -136,7 +135,7 @@ class Core:
 
                 if input_text is not None:
                     self.flag_think = True
-                    dbg_info(f"User: {input_text}")
+                    dbg_info(f"User: '{input_text}'")
                     if blocking_mode:
                         assistant_message = self.think.think(input_text)
                         # dbg_print(f"Assistant: {assistant_message}")
