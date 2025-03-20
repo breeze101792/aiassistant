@@ -48,7 +48,7 @@ class ASRService:
 
         # vars init
         # Init hotword
-        if hot_words is not None
+        if hot_words is not None:
             self.flag_hotword_mode = True
             for each_word in hot_words:
                 if each_word not in self.HOTWORDS:
