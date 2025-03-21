@@ -1,3 +1,4 @@
+import traceback
 import pyaudio
 import time
 import threading
@@ -26,7 +27,7 @@ class ASRService:
     DEVICE_INDEX = 5  # 手動設定裝置 ID（可用 list_audio_devices() 查詢）
     HOTWORDS = ["Hello."]
     CHUNK = int(AUDIO_RATE * 20 / 1000)
-    SILENCE_DURATION = 3  # 若無聲音超過 3 秒則結束錄音
+    SILENCE_DURATION = 1  # 若無聲音超過 3 秒則結束錄音
     SPEACH_TIMEOUT = 60  # switch output off if timeout hit.
 
     def __init__(self, device_index = 0, sample_rate = 48000, hot_words = None):
@@ -62,6 +63,55 @@ class ASRService:
 
         # init cc
         self.cc = OpenCC('s2t')
+    @staticmethod
+    def list_audio_devices(test_sample_rates=None):
+        """
+        列出 PyAudio 所有輸入裝置以及其支援的 sample rate 測試結果
+        """
+        if test_sample_rates is None:
+            test_sample_rates = [
+                8000,   # 電話品質
+                11025,  # 老音訊格式
+                16000,  # 常用語音辨識
+                22050,  # 低品質音樂
+                32000,  # 中品質音樂
+                44100,  # CD 品質
+                48000,  # 標準錄音
+                88200,  # 高品質錄音
+                96000,  # 高解析錄音
+                176400, # 發燒級
+                192000  # 專業錄音
+            ]
+
+        audio = pyaudio.PyAudio()
+        device_count = audio.get_device_count()
+
+        print("🎧 Audio Input Device List:\n")
+
+        for i in range(device_count):
+            info = audio.get_device_info_by_index(i)
+
+            if info.get("maxInputChannels") > 0:
+                print(f"🔹 Device Index: {i}")
+                print(f"    Name: {info['name']}")
+                print(f"    Max Input Channels: {info['maxInputChannels']}")
+                print(f"    Default Sample Rate: {int(info['defaultSampleRate'])}")
+
+                print("    Supported Sample Rates:")
+                for rate in test_sample_rates:
+                    try:
+                        audio.is_format_supported(rate,
+                                               input_device=info["index"],
+                                               input_channels=1,
+                                               input_format=pyaudio.paInt16)
+                        print(f"      ✅ {rate} Hz")
+                    except ValueError:
+                        pass
+                        # print(f"      ❌ {rate} Hz")
+
+                print("-" * 50)
+
+        audio.terminate()
     def get(self):
         if self.text_queue.empty() is False:
             message = self.text_queue.get()
@@ -158,12 +208,21 @@ class ASRService:
 
         print("🎤 Continuous listen...")
 
-        stream = self.audio.open(format=self.FORMAT,
-                                 channels=self.CHANNELS,
-                                 rate=self.AUDIO_RATE,
-                                 input=True,
-                                 frames_per_buffer=self.CHUNK,
-                                 input_device_index=self.DEVICE_INDEX)
+        stream = None
+        try:
+            stream = self.audio.open(format=self.FORMAT,
+                                    channels=self.CHANNELS,
+                                    rate=self.AUDIO_RATE,
+                                    input=True,
+                                    frames_per_buffer=self.CHUNK,
+                                    input_device_index=self.DEVICE_INDEX)
+        except Exception as e:
+            print(e)
+            traceback_output = traceback.format_exc()
+            print(traceback_output)
+            self.list_audio_devices()
+            raise
+
         self.flag_run = True
         while self.flag_run:
             audio_list = []
@@ -181,6 +240,9 @@ class ASRService:
                         print("🎙️ Audio defected...")
                         is_recording = True
                         start_time = time.time()
+
+                    # Refresh silence_start_time
+                    if is_speech is True:
                         silence_start_time = time.time()
 
                     # record data.
