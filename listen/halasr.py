@@ -47,6 +47,15 @@ class ASRService:
         self.last_speech_time = time.time()  # 記錄最後一次辨識成功的時間
         self.text_queue = queue.Queue()
 
+        # load model
+        self.model = None
+
+        # Init mic
+        self.audio = None
+
+        # init cc
+        self.cc = None
+
         # vars init
         # Init hotword
         if hot_words is not None:
@@ -229,6 +238,7 @@ class ASRService:
             is_recording = False
             start_time = time.time()
             silence_start_time = time.time()
+            silence_cnt = 3
 
             try:
                 while self.flag_run:
@@ -252,7 +262,7 @@ class ASRService:
                     # 偵測停止（若無聲音超過 SILENCE_DURATION 秒則結束錄音）
                     silence_duration = time.time() - silence_start_time
                     if is_recording and silence_duration > self.SILENCE_DURATION:
-                        print("🛑 Recording ended, start recognition...")
+                        print(f"🛑 Recording ended, start recognition...")
                         break
             except KeyboardInterrupt:
                 print("\n🛑 Stop listening.")

@@ -263,6 +263,38 @@ class Core:
 
         self.flag_service_running = False
         dbg_warning('Speak Service End.')
+    def input_service(self):
+
+        dbg_info('Input Service Start.')
+        while True:
+            try:
+                input_text = input('User Input: ')
+                if input_text is not None:
+                    self.listen_queue.put(input_text)
+
+                if self.flag_think is True or self.listen_queue.empty() is False:
+                    self.listen.wait()
+
+            except KeyboardInterrupt:
+                dbg_warning("Keyboard Interupt.")
+                self.flag_service_running = False
+            except Exception as e:
+                dbg_error(e)
+
+                traceback_output = traceback.format_exc()
+                dbg_error(traceback_output)
+                self.flag_service_running = False
+
+            finally:
+                # Finalize service thread.
+                if self.flag_core_running is False or self.flag_service_running is False:
+                    dbg_trace('Finalize service thread.')
+                    break
+
+                time.sleep(self.def_threading_delay)
+
+        self.flag_service_running = False
+        dbg_warning('Input Service End.')
     def initialize(self):
         dbg_info('Core start initialize.')
         try:
@@ -303,15 +335,19 @@ class Core:
             self.think_service_thread.start()
             thread_list.append(self.think_service_thread)
 
-            # listen
-            self.listen_service_thread = threading.Thread(target=self.__listen_service)
-            self.listen_service_thread.start()
-            thread_list.append(self.listen_service_thread)
-
             # speak
             self.speak_service_thread = threading.Thread(target=self.__speak_service)
             self.speak_service_thread.start()
             thread_list.append(self.speak_service_thread)
+
+            # listen
+            user_input_test = False
+            if user_input_test:
+                self.input_service()
+            else:
+                self.listen_service_thread = threading.Thread(target=self.__listen_service)
+                self.listen_service_thread.start()
+                thread_list.append(self.listen_service_thread)
 
             # Monitor Thread
             # self.heatbeat_thread = threading.Thread(target=self.__heatbeat, daemon=True)
