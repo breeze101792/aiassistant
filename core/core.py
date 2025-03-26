@@ -10,6 +10,9 @@ from listen.listen import *
 from speak.speak import *
 from think.think import *
 
+from agent.assistant import AssistantAgent
+from llm.llm import *
+
 class Core:
     def __init__(self):
         # def
@@ -35,6 +38,9 @@ class Core:
 
         # class
         self.database = None
+
+        ## FIXME, remove me, when it's done.
+        self.one_agent = True
 
     def __initcheck(self):
         # Check env setup is okay or not.
@@ -298,13 +304,16 @@ class Core:
     def initialize(self):
         dbg_info('Core start initialize.')
         try:
-            # modules
-            self.listen = Listen(device_index=4)
-            self.speak = Speak()
-            self.think = Think()
+            if self.one_agent:
+                pass
+            else:
+                # modules
+                self.listen = Listen(device_index=4)
+                self.speak = Speak()
+                self.think = Think()
 
-            self.listen_queue = queue.Queue()
-            self.speak_queue = queue.Queue()
+                self.listen_queue = queue.Queue()
+                self.speak_queue = queue.Queue()
 
         except Exception as e:
             dbg_error(e)
@@ -325,9 +334,17 @@ class Core:
 
         self.flag_core_running = True
         try:
-            one_agent = False
-            if one_agent:
-                pass
+            if self.one_agent:
+                dbg_info("One Agent.")
+                llm = LLM()
+                chat_ins = llm.get_llm()
+
+                assistant = AssistantAgent(chat_ins)
+                while True:
+                    msg = input("User :")
+                    assistant.send_message(msg)
+                # Assistant.
+
             else:
                 self.flag_service_running = True
                 # self.service_thread = threading.Thread(target=self.__service)
