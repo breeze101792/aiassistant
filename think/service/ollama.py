@@ -1,7 +1,7 @@
-
 import queue
-
 import ollama 
+
+from think.service.llm import LlmService
 
 class OllamaService:
     OLLAMA_SERVER = 'http://10.31.1.7:11434'

@@ -299,7 +299,7 @@ class Core:
         dbg_info('Core start initialize.')
         try:
             # modules
-            self.listen = Listen(device_index=5)
+            self.listen = Listen(device_index=4)
             self.speak = Speak()
             self.think = Think()
 
@@ -325,39 +325,43 @@ class Core:
 
         self.flag_core_running = True
         try:
-            self.flag_service_running = True
-            # self.service_thread = threading.Thread(target=self.__service)
-            # self.service_thread.start()
-            # thread_list.append(self.service_thread)
-
-            # think
-            self.think_service_thread = threading.Thread(target=self.__think_service)
-            self.think_service_thread.start()
-            thread_list.append(self.think_service_thread)
-
-            # speak
-            self.speak_service_thread = threading.Thread(target=self.__speak_service)
-            self.speak_service_thread.start()
-            thread_list.append(self.speak_service_thread)
-
-            # listen
-            user_input_test = False
-            if user_input_test:
-                self.input_service()
+            one_agent = False
+            if one_agent:
+                pass
             else:
-                self.listen_service_thread = threading.Thread(target=self.__listen_service)
-                self.listen_service_thread.start()
-                thread_list.append(self.listen_service_thread)
+                self.flag_service_running = True
+                # self.service_thread = threading.Thread(target=self.__service)
+                # self.service_thread.start()
+                # thread_list.append(self.service_thread)
 
-            # Monitor Thread
-            # self.heatbeat_thread = threading.Thread(target=self.__heatbeat, daemon=True)
-            self.heatbeat_thread = threading.Thread(target=self.__heatbeat)
-            self.heatbeat_thread.start()
-            thread_list.append(self.heatbeat_thread)
+                # think
+                self.think_service_thread = threading.Thread(target=self.__think_service)
+                self.think_service_thread.start()
+                thread_list.append(self.think_service_thread)
 
-            # wait for threading.
-            for each_thread in thread_list:
-                each_thread.join()
+                # speak
+                self.speak_service_thread = threading.Thread(target=self.__speak_service)
+                self.speak_service_thread.start()
+                thread_list.append(self.speak_service_thread)
+
+                # listen
+                user_input_test = False
+                if user_input_test:
+                    self.input_service()
+                else:
+                    self.listen_service_thread = threading.Thread(target=self.__listen_service)
+                    self.listen_service_thread.start()
+                    thread_list.append(self.listen_service_thread)
+
+                # Monitor Thread
+                # self.heatbeat_thread = threading.Thread(target=self.__heatbeat, daemon=True)
+                self.heatbeat_thread = threading.Thread(target=self.__heatbeat)
+                self.heatbeat_thread.start()
+                thread_list.append(self.heatbeat_thread)
+
+                # wait for threading.
+                for each_thread in thread_list:
+                    each_thread.join()
 
         except KeyboardInterrupt:
             dbg_warning("Keyboard Interupt.")
