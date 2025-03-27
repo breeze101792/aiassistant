@@ -6,16 +6,18 @@ import threading
 import queue
 
 from utility.debug import *
+from llm.base import BaseService
 
-class RKLlamaService:
-    def __init__(self, model = None):
-        self.server_url = "http://127.0.0.1:8080/"
+class RKLlamaService(BaseService):
+    def __init__(self, model = None, url = None):
         if model is not None:
             self.model=model
         else:
             self.model = "Qwen2.5-3B-Instruct-rk3588-w8a8_g256-opt-1-hybrid-ratio-1.0"
 
-        self.stream_mode = True
+        super().__init__(model, url)
+        # self.server_url = "http://127.0.0.1:8080/"
+
         self.verbose = False
 
         # init
@@ -24,32 +26,11 @@ class RKLlamaService:
         # self.result_queue = queue.Queue()
         # self.service_thread = None
 
-    # def start(self):
-    #     if self.check_status() != 200 and command not in ['serve', 'update']:
-    #         dbg_error(f"Error: Server not started!")
-    #         raise
-    #     self.switch_model(self.model)
-
-    def check_status(self):
-        try:
-            response = requests.get(self.server_url)
-            return response.status_code
-        except:
-            return 500
-
-    # def think(self, message, block = True):
-    #     self.result_queue = queue.Queue()
-    #
-    #     if block is False:
-    #         service_thread = threading.Thread(target=self.send_message, args=(message, ), daemon=True)
-    #         service_thread.start()
-    #         return None
-    #     else:
-    #         return self.send_message(message)
 
     # Sends a message to the loaded model and displays the response.
-    def generate_response(self, message):
+    def generate_response(self, message, hidden = False):
         dbg_info(f"User: {message}")
+        stream_mode = True
 
         # self.history.append({"role": "user", "content": message})
 
@@ -58,13 +39,13 @@ class RKLlamaService:
 
         payload = {
             "messages": message,
-            "stream": self.stream_mode
+            "stream": stream_mode
         }
 
         assistant_message = None
 
         try:
-            if self.stream_mode:
+            if stream_mode:
                 with requests.post(self.server_url + "generate", json=payload, stream=True) as response:
 
                     if response.status_code == 200:

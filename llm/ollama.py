@@ -1,23 +1,22 @@
 import queue
 import ollama 
 
-class OllamaService:
-    def __init__(self, model = None):
-        self.server_url = 'http://10.31.1.7:11434'
-        if model is not None:
-            self.model=model
-        else:
-            self.model='mistral:latest'
+from llm.base import BaseService
+
+class OllamaService(BaseService):
+    def __init__(self, model = None, url = None):
+        super().__init__(model, url)
+        # self.server_url = 'http://10.31.1.7:11434'
+        # if model is not None:
+        #     self.model=model
+        # else:
+        #     self.model='mistral:latest'
 
         # self.model='deepseek-r1:latest'
         # self.model='qwen2.5:1.5b'
 
-        # self.result_queue = queue.Queue()
-    # def start(self):
-    #     pass
-
     # Function to send a chat message
-    def generate_response(self, message):
+    def generate_response(self, message, hidden = False):
         # self.history = []
         # self.system_prompt = "You are a help full assistant"
         # self.history.append({"role": "system", "content": self.system_prompt})
@@ -36,13 +35,15 @@ class OllamaService:
 
             replay_message = ''
             for chunk in stream:
-                print(chunk['message']['content'], end='', flush=True)
+                if not hidden:
+                    print(chunk['message']['content'], end='', flush=True)
                 replay_message +=chunk['message']['content']
 
                 # if '.' in replay_message or '?' in replay_message or '!' in replay_message or "。" in replay_message:
                 #     self.result_queue.put(replay_message)
                 #     replay_message = ""
-            print("")
+            if not hidden:
+                print("")
             # self.history.append({"role": "assistant", "content": replay_message})
             return replay_message
         except Exception as e:
