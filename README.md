@@ -34,5 +34,5 @@ pip install ollama
 
 ## Package
 ```
-funasr pyaudio torch torchaudio webrtcvad opencc titoken
+funasr pyaudio torch torchaudio webrtcvad opencc titoken tzlocal duckduckgo-search bs4
 ```

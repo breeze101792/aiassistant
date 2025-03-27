@@ -1,5 +1,6 @@
 # from llm.llm import *
 from utility.debug import *
+from api.api import APIManager
 
 class BaseAgent:
     def __init__(self, kernel):
@@ -9,16 +10,16 @@ class BaseAgent:
         self.token_compress_target = 600
         self.history = []
         self.agent_description = "You are helpful assistant."
+        self.apimgr = APIManager()
     # Internal API
     def message_compose(self, message):
         msg_buf = []
-        rkllama = False
-        if rkllama is True:
-            msg_buf.append({"role": "user", "content": self.agent_description})
+        if self.kernel.ServiceProvider is 'rkllama':
+            msg_buf.append({"role": "user", "content": self.agent_description + self.apimgr.get_prompt()})
             msg_buf.append({"role": "assistant", "content": "ok"})
         else:
             msg_buf.append({"role": "system", "content": self.agent_description})
-
+            msg_buf.append({"role": "system", "content": self.apimgr.get_prompt()})
 
         self.history.append({"role": "user", "content": message})
 
@@ -26,8 +27,6 @@ class BaseAgent:
         return msg_buf
     def append_history(self, role, message):
         self.history.append({"role": role, "content": message})
-    def send_message(self, message):
-        pass
     def compress_history(self):
         dbg_info(f"Compressing chat history.")
         latest_history = self.history[-2:]
@@ -50,7 +49,10 @@ We have had previous conversations that are relevant to our ongoing discussion. 
 This summarized history contains the key points and context of our previous interactions. Please use this information as context for any future responses.
 """
         self.history = []
-        self.history.append({"role": "system", "content": compressed_history})
+        if self.kernel.ServiceProvider is 'rkllama':
+            self.history.append({"role": "user", "content": compressed_history})
+        else:
+            self.history.append({"role": "system", "content": compressed_history})
         self.history.append({"role": "assistant", "content": "ok."})
         self.history = self.history + latest_history
         # self.history = [{"role": "system", "content": f"recap for previous chat. self.agent_description"}]
@@ -66,20 +68,35 @@ This summarized history contains the key points and context of our previous inte
         msg_buf = self.message_compose(message)
 
         # get response 
-        result_buf = self.kernel.generate_response(msg_buf)
-        # print(f"asstant: {result_buf}")
+        response_buf = self.kernel.generate_response(msg_buf)
+        # print(f"asstant: {response_buf}")
+        api_result = self.apimgr.handle_ai_message(response_buf)
+        if api_result != "":
+            # print(api_result)
+            # msg_buf.append({"role": "user", "content": f"API Result: {api_result}"})
+            result_buf = f"""
+API Result: {api_result}
+Summarize and answser user's question: {message}
+"""
+            if self.kernel.ServiceProvider is 'rkllama':
+                msg_buf.append({"role": "user", "content": result_buf})
+            else:
+                msg_buf.append({"role": "system", "content": result_buf})
+
+            response_buf = self.kernel.generate_response(msg_buf)
 
         # save history.
-        self.append_history('assistant',result_buf)
+        self.append_history('assistant',response_buf)
 
         self.check_history()
-        return result_buf
+        return response_buf
 
 class AssistantAgent(BaseAgent):
     def __init__(self, kernel):
         super().__init__(kernel)
         self.agent_description = """
 You are a smart, detail-oriented assistant. Always think before answering, never say “I don’t know” too quickly. Focus on solving problems with clear, organized responses — not raw data. Proactively point out anything I may have missed. Match my language (English or Traditional Chinese), and always speak concisely.
+1. list reference link, if it's an online search.
 """
 
 

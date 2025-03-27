@@ -5,6 +5,7 @@ import tiktoken
 from utility.debug import *
 
 class BaseService:
+    ServiceProvider = ''
     def __init__(self, model = None, url = None, token_limit = 8000):
         if model is not None:
             self.server_url = url

@@ -9,6 +9,7 @@ from utility.debug import *
 from llm.base import BaseService
 
 class RKLlamaService(BaseService):
+    ServiceProvider = 'rkllama'
     def __init__(self, model = None, url = None):
         if model is not None:
             self.model=model
@@ -21,7 +22,8 @@ class RKLlamaService(BaseService):
         self.verbose = False
 
         # init
-        self.switch_model(self.model)
+        if self.check_status() is False:
+            self.switch_model(self.model)
 
         # self.result_queue = queue.Queue()
         # self.service_thread = None
@@ -29,7 +31,7 @@ class RKLlamaService(BaseService):
 
     # Sends a message to the loaded model and displays the response.
     def generate_response(self, message, hidden = False):
-        dbg_info(f"User: {message}")
+        dbg_trace(f"Message: {message}")
         stream_mode = True
 
         # self.history.append({"role": "user", "content": message})

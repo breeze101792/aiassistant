@@ -2,8 +2,10 @@ import queue
 import ollama 
 
 from llm.base import BaseService
+from utility.debug import *
 
 class OllamaService(BaseService):
+    ServiceProvider = 'ollama'
     def __init__(self, model = None, url = None):
         super().__init__(model, url)
         # self.server_url = 'http://10.31.1.7:11434'
@@ -17,6 +19,7 @@ class OllamaService(BaseService):
 
     # Function to send a chat message
     def generate_response(self, message, hidden = False):
+        dbg_trace(f"Message: {message}")
         # self.history = []
         # self.system_prompt = "You are a help full assistant"
         # self.history.append({"role": "system", "content": self.system_prompt})
