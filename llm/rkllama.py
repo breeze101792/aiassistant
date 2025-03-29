@@ -11,13 +11,14 @@ from llm.ollama import OllamaService
 
 class RKLlamaService(BaseService):
     ServiceProvider = 'rkllama'
-    def __init__(self, model = None, url = None):
+    def __init__(self, model = None, url = None, token_limit = 4000):
+        super().__init__(model, url, token_limit)
+
         if model is not None:
             self.model=model
         else:
             self.model = "Qwen2.5-3B-Instruct-rk3588-w8a8_g256-opt-1-hybrid-ratio-1.0"
 
-        super().__init__(model, url)
         # self.server_url = "http://127.0.0.1:8080/"
 
         self.verbose = False
@@ -166,14 +167,13 @@ class RKLlamaService(BaseService):
 
 class RKOllamaService(OllamaService):
     ServiceProvider = 'rkllama'
-    def __init__(self, model = None, url = None):
-        super().__init__(model, url)
+    def __init__(self, model = None, url = None, token_limit = 1024):
+        super().__init__(model, url, token_limit)
         # init
         self.rksvc = RKLlamaService(self.model, self.server_url)
         # self.rksvc.switch_model(self.model)
 
         self.ServiceProvider = self.rksvc.ServiceProvider
-        self.token_limit = 900
     def connect(self):
         dbg_info(f'Connect to model: {self.model}')
         self.rksvc.switch_model(self.model)

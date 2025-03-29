@@ -25,7 +25,7 @@ class APIManager:
                 "parameters": api_ins.PARAMETERS
             }
     def generate_api_doc(self):
-        doc = "📌 Available APIs:\n"
+        doc = "## Available APIs:\n"
         # print(self.api_function_table.items())
         for api_name, detail in self.api_function_table.items():
             doc += f"{api_name}\n"
@@ -51,10 +51,9 @@ WeatherAPI(location="New York")
 * example wihout param:
 CurrentDateTimeAPI()
 
-[API Documents]
 {self.generate_api_doc()}
 
-!If no API is needed, just reply normally. DO NOT reveal API use to user.
+!If no API is needed, just reply normally.
 """
 
     def parse_ai_message(self, message: str):

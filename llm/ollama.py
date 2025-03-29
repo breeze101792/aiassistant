@@ -6,8 +6,8 @@ from utility.debug import *
 
 class OllamaService(BaseService):
     ServiceProvider = 'ollama'
-    def __init__(self, model = None, url = None):
-        super().__init__(model, url)
+    def __init__(self, model = None, url = None, token_limit = 10000):
+        super().__init__(model, url, token_limit)
         # self.server_url = 'http://10.31.1.7:11434'
         # if model is not None:
         #     self.model=model

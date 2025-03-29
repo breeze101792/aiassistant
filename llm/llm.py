@@ -13,7 +13,10 @@ class LLM:
         self.model_list = {}
 
         # FIXME, remove hard coded.
-        remote_chat = OllamaService(model='qwen2.5', url = 'http://10.31.1.7:11434')
+        # remote_chat = OllamaService(model='qwen2.5', url = 'http://10.31.1.7:11434')
+        # remote_chat = OllamaService(model='phi4:14b-q8_0', url = 'http://10.31.1.7:11434')
+        # remote_chat = OllamaService(model='qwen2.5:14b-instruct-q8_0', url = 'http://10.31.1.7:11434')
+        remote_chat = OllamaService(model='qwen2.5:7b-instruct-q8_0', url = 'http://10.31.1.7:11434')
         remote_reason = OllamaService(model='deepseek-r1', url = 'http://10.31.1.7:11434')
 
         # FIXME, RKLlamaService, need to check / at the end of url.
@@ -28,7 +31,7 @@ class LLM:
         # local_chat.ServiceProvider = 'rkllama'
         # local_chat.ServiceProvider = 'ollama'
 
-        if remote_chat.check_status():
+        if remote_chat.check_status() :
             dbg_info(f'Using {remote_chat.server_url}')
             self.model_list[LLM.Function.CHAT] = remote_chat
             self.model_list[LLM.Function.REASON] = remote_reason
