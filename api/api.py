@@ -1,8 +1,9 @@
 import re
 import traceback
 from api.base import *
+from api.system import *
+from api.websearch import *
 from utility.debug import *
-
 
 class APIManager:
     def __init__(self):
@@ -11,6 +12,7 @@ class APIManager:
 
         self.register_api(WeatherAPI)
         self.register_api(CurrentDateTimeAPI)
+        self.register_api(SysCmdAPI)
         self.register_api(WebSearchAPI)
 
     def register_api(self, api_ins):
@@ -39,23 +41,26 @@ class APIManager:
 
     def get_prompt(self):
         return f"""
-You have access to the following APIs. All returns need to process by you, excuete once at a time.
-To call an API, use single line with this format(Start with '[', end with ']'):  
-[APIName(param1=value1, param2=value2)]
+You have access to the following APIs with system. All returns need to process by you, excuete once at a time.
+[Usage]
+To call an API, just output only one line:  
+APIName(param1=value1, param2=value2)
 
+* example usages:
+WeatherAPI(location="New York")
+* example wihout param:
+CurrentDateTimeAPI()
+
+[API Documents]
 {self.generate_api_doc()}
 
-✳️ Example usages:
-[WeatherAPI(location="New York")]
-✳️ Example wihout param:
-[CurrentDateTimeAPI()]
-
-❗If no API is needed, just reply normally.
+!If no API is needed, just reply normally. DO not let user see api usage.
 """
 
     def parse_ai_message(self, message: str):
         # 用正則表達式或 LLM 提取 API 名與參數
-        match = re.search(r"\[(\w+)\((.*?)\)\]", message)
+        # match = re.search(r"\[(\w+)\((.*?)\)\]", message)
+        match = re.search(r"(\w+)\((.*?)\)", message)
         if not match:
             return None, {}
 

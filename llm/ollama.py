@@ -51,4 +51,5 @@ class OllamaService(BaseService):
             return replay_message
         except Exception as e:
             print("Error:", e)
+            self.connect()
             return None

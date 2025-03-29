@@ -17,6 +17,8 @@ class BaseService:
             self.model = "deepseek-r1"
         self.token_limit = token_limit
 
+    def connect(self):
+        pass
         # Checking status.
         # self.check_status
     def check_status(self):

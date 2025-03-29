@@ -74,10 +74,14 @@ This summarized history contains the key points and context of our previous inte
         if api_result != "":
             # print(api_result)
             # msg_buf.append({"role": "user", "content": f"API Result: {api_result}"})
+#             result_buf = f"""
+# API Result: {api_result}
+# Summarize and answser user's question: {message}
+# """
             result_buf = f"""
 API Result: {api_result}
-Summarize and answser user's question: {message}
 """
+            msg_buf.append({"role": "assistant", "content": response_buf})
             if self.kernel.ServiceProvider is 'rkllama':
                 msg_buf.append({"role": "user", "content": result_buf})
             else:
@@ -94,9 +98,15 @@ Summarize and answser user's question: {message}
 class AssistantAgent(BaseAgent):
     def __init__(self, kernel):
         super().__init__(kernel)
+#         self.agent_description = """
+# You are a smart, detail-oriented assistant. Always think before answering, never say “I don’t know” too quickly. Focus on solving problems with clear, organized responses — not raw data. Proactively point out anything I may have missed. Match my language (English or Traditional Chinese), and always speak concisely.
+# 1. list reference link, if it's an online search.
+# """
         self.agent_description = """
 You are a smart, detail-oriented assistant. Always think before answering, never say “I don’t know” too quickly. Focus on solving problems with clear, organized responses — not raw data. Proactively point out anything I may have missed. Match my language (English or Traditional Chinese), and always speak concisely.
 1. list reference link, if it's an online search.
+2. All you news is out-dated. if request with time realted things, please use api or internet to check.
+3. Use Web search only if there is no API to check.
 """
 
 

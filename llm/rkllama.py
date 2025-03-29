@@ -7,6 +7,7 @@ import queue
 
 from utility.debug import *
 from llm.base import BaseService
+from llm.ollama import OllamaService
 
 class RKLlamaService(BaseService):
     ServiceProvider = 'rkllama'
@@ -22,12 +23,9 @@ class RKLlamaService(BaseService):
         self.verbose = False
 
         # init
-        if self.check_status() is False:
-            self.switch_model(self.model)
-
-        # self.result_queue = queue.Queue()
-        # self.service_thread = None
-
+        # self.switch_model(self.model)
+        # if self.check_status() is False:
+        #     self.switch_model(self.model)
 
     # Sends a message to the loaded model and displays the response.
     def generate_response(self, message, hidden = False):
@@ -118,6 +116,8 @@ class RKLlamaService(BaseService):
 
         return assistant_message
 
+    def connect(self):
+        self.switch_model(self.model)
     # Function to change model if the old model loaded is not the same one to execute
     def switch_model(self, new_model):
         response = requests.get(self.server_url + "current_model")
@@ -163,3 +163,17 @@ class RKLlamaService(BaseService):
                 dbg_error(f"Error when unloading model: {response.status_code} - {response.json().get('error', response.text)}")
         except requests.RequestException as e:
             dbg_error(f"Query error: {e}")
+
+class RKOllamaService(OllamaService):
+    ServiceProvider = 'rkllama'
+    def __init__(self, model = None, url = None):
+        super().__init__(model, url)
+        # init
+        self.rksvc = RKLlamaService(self.model, self.server_url)
+        # self.rksvc.switch_model(self.model)
+
+        self.ServiceProvider = self.rksvc.ServiceProvider
+        self.token_limit = 900
+    def connect(self):
+        dbg_info(f'Connect to model: {self.model}')
+        self.rksvc.switch_model(self.model)
