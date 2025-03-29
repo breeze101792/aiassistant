@@ -12,6 +12,7 @@ from think.think import *
 
 from agent.assistant import AssistantAgent
 from llm.llm import *
+from core.aicli import AICLI
 
 class Core:
     def __init__(self):
@@ -335,15 +336,10 @@ class Core:
         self.flag_core_running = True
         try:
             if self.one_agent:
-                dbg_info("One Agent.")
-                llm = LLM()
-                chat_ins = llm.get_llm()
-
-                assistant = AssistantAgent(chat_ins)
-                while True:
-                    msg = input("User :")
-                    assistant.send_message(msg)
                 # Assistant.
+                aicli = AICLI()
+                # aicli.regist_cmd("test", args_test_function, description="test function for args", arg_list=['project', 'task', 'name', 'description']  )
+                aicli.run()
 
             else:
                 self.flag_service_running = True

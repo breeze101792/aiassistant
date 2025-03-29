@@ -54,7 +54,7 @@ CurrentDateTimeAPI()
 [API Documents]
 {self.generate_api_doc()}
 
-!If no API is needed, just reply normally. DO not let user see api usage.
+!If no API is needed, just reply normally. DO NOT reveal API use to user.
 """
 
     def parse_ai_message(self, message: str):
