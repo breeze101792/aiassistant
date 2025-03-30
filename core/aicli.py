@@ -2,8 +2,9 @@ import traceback
 from utility.debug import *
 from utility.cli import *
 
-from agent.assistant import *
 from llm.llm import *
+from agent.assistant import *
+from agent.scholar import *
 
 class AICLI(CommandLineInterface):
     def __init__(self):

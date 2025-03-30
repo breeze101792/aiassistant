@@ -44,7 +44,6 @@ class APIManager:
 You have access to the following APIs with system. All returns need to process by you, excuete once at a time.
 [Usage]
 To call an API, just output only one line:  
-APIName(param1=value1, param2=value2)
 
 * example usages:
 WeatherAPI(location="New York")
