@@ -1,5 +1,6 @@
 from utility.debug import *
 from api.api import APIManager
+from api.apijson import APIManager
 
 class BaseAgent:
     def __init__(self, kernel = None):
@@ -16,7 +17,7 @@ class BaseAgent:
     # Internal API
     def message_compose(self, message):
         msg_buf = []
-        if self.kernel.ServiceProvider is 'rkllama':
+        if self.kernel.ServiceProvider == 'rkllama':
             msg_buf.append({"role": "user", "content": self.agent_description + self.apimgr.get_prompt()})
             msg_buf.append({"role": "assistant", "content": "ok"})
         else:
@@ -51,7 +52,7 @@ We have had previous conversations that are relevant to our ongoing discussion. 
 This summarized history contains the key points and context of our previous interactions. Please use this information as context for any future responses.
 """
         self.history = []
-        if self.kernel.ServiceProvider is 'rkllama':
+        if self.kernel.ServiceProvider == 'rkllama':
             self.history.append({"role": "user", "content": compressed_history})
         else:
             self.history.append({"role": "system", "content": compressed_history})
@@ -73,23 +74,21 @@ This summarized history contains the key points and context of our previous inte
         response_buf = self.kernel.generate_response(msg_buf)
         # print(f"asstant: {response_buf}")
         api_result = self.apimgr.handle_ai_message(response_buf)
-        if api_result != "":
-            # print(api_result)
-            # msg_buf.append({"role": "user", "content": f"API Result: {api_result}"})
-#             result_buf = f"""
-# API Result: {api_result}
-# Summarize and answser user's question: {message}
-# """
+        # if api_result != "":
+        dbg_print(api_result['tool_results'])
+        while api_result != "" and len(api_result['tool_results']) != 0:
             result_buf = f"""
 API Result: {api_result}
 """
             msg_buf.append({"role": "assistant", "content": response_buf})
-            if self.kernel.ServiceProvider is 'rkllama':
+            if self.kernel.ServiceProvider == 'rkllama':
                 msg_buf.append({"role": "user", "content": result_buf})
             else:
                 msg_buf.append({"role": "system", "content": result_buf})
 
             response_buf = self.kernel.generate_response(msg_buf)
+
+            api_result = self.apimgr.handle_ai_message(response_buf)
 
         # save history.
         self.append_history('assistant',response_buf)

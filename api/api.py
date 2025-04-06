@@ -40,19 +40,48 @@ class APIManager:
         return doc
 
     def get_prompt(self):
+#         return f"""
+# You have access to the following APIs with system. All returns need to process by you, excuete once at a time.
+# [Usage]
+# To call an API, just output only one line:  
+#
+# * example usages:
+# WeatherAPI(location="New York")
+# * example wihout param:
+# CurrentDateTimeAPI()
+#
+# {self.generate_api_doc()}
+#
+# !If no API is needed, just reply normally.
+# """
         return f"""
 You have access to the following APIs with system. All returns need to process by you, excuete once at a time.
-[Usage]
-To call an API, just output only one line:  
-
-* example usages:
-WeatherAPI(location="New York")
-* example wihout param:
-CurrentDateTimeAPI()
-
+## Available APIs:
 {self.generate_api_doc()}
 
-!If no API is needed, just reply normally.
+## Usage
+To call an API, just output only one line:  
+
+## Complete Example of the Workflow:
+
+### 🟢 User request:
+User: "What's the weather tomorrow?"
+
+### 🟡 Your first response (API call):
+```python
+WeatherAPI(location="Taipei")
+```
+
+🔵 API returns data to you (LLM):
+
+Taipei, 2025-03-30, cloudy, temperature 21°C to 26°C, 20% chance of rain
+
+🟡 Your final response to the user after receiving API data:
+
+## Response Rules:
+- If the instruction is clear and matches an available API → Call the API.
+- If the instruction is clear but does not match any API → Respond directly to the user.
+- If the instruction is unclear or missing details → Ask the user for clarification.
 """
 
     def parse_ai_message(self, message: str):

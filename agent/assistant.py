@@ -1,6 +1,5 @@
 # from llm.llm import *
 from utility.debug import *
-from api.api import APIManager
 from llm.ollama import OllamaService
 from llm.rkllama import RKLlamaService,RKOllamaService
 from agent.base import BaseAgent
@@ -10,6 +9,7 @@ class AssistantAgent(BaseAgent):
         super().__init__(kernel)
         # self.kernel = OllamaService(model='qwen2.5:7b-instruct-q8_0', url = 'http://10.31.1.7:11434')
         if kernel is None:
+            # self.kernel = OllamaService(model='qwen2.5:32b', url = 'http://10.31.1.7:11434', token_limit=131072)
             # self.kernel = OllamaService(model='qwen2.5:14b-instruct-q8_0', url = 'http://10.31.1.7:11434', token_limit=131072)
             self.kernel = OllamaService(model='qwen2.5:7b-instruct-q8_0', url = 'http://10.31.1.7:11434', token_limit=131072)
 #         self.agent_description = """
@@ -21,6 +21,7 @@ You are a smart, detail-oriented assistant. Always think before answering, never
 1. list reference link, if it's an online search.
 2. All you news is out-dated. if request with time realted things, please use api or internet to check.
 3. Use Web search only if there is no API to check.
+4. User api to get date/time, if you are process time related task.
 """
 
 class SimpleAgent(BaseAgent):
@@ -35,45 +36,15 @@ class SimpleAgent(BaseAgent):
             self.kernel.connect()
 
         self.agent_description = f"""
-
 You are a personal assistant responsible for responding to user requests clearly and accurately.
 
 ## Workflow:
 1. The user gives you a request.
-2. If an API call is required, respond directly with the API call command:
-   Example: get_weather_api(location="Taipei")
+2. If an API call is required, respond directly with the API call command
 3. If the user's request lacks necessary details, ask the user directly for clarification.
 4. If no API is needed, respond directly in natural language.
 
-## Available APIs:
-- get_weather_api(location: str, date: str)
-- create_calendar_event_api(title: str, date: str, time: str)
-- search_web_api(query: str)
-- play_music_api(song_name: str)
-
-## Complete Example of the Workflow:
-
-### 🟢 User request:
-User: "What's the weather tomorrow?"
-
-### 🟡 Your first response (API call):
-```python
-WeatherAPI(location="Taipei")
-
-🔵 API returns data to you (LLM):
-
-Taipei, 2025-03-30, cloudy, temperature 21°C to 26°C, 20% chance of rain
-
-🟡 Your final response to the user after receiving API data:
-
-The weather in Taipei tomorrow (March 30th) will be cloudy, with temperatures ranging from 21°C to 26°C and about a 20% chance of rain.
-
 {self.apimgr.get_prompt()}
-
-## Response Rules:
-- If the instruction is clear and matches an available API → Call the API.
-- If the instruction is clear but does not match any API → Respond directly to the user.
-- If the instruction is unclear or missing details → Ask the user for clarification.
 
 Please follow these rules and examples below to handle user requests.
 """

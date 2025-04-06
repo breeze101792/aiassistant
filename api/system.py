@@ -11,7 +11,3 @@ class SysCmdAPI(BaseAPI):
         }
     def execute(self, cmd=""):
         return f"Empty."
-
-class ScheduleAPI(BaseAPI):
-    NAME = "ScheduleAPI"
-    DESCRIPTION = "Add a todo job/things on scheduler for AI. when the time come, it'll callback to ai to do the task."
