@@ -1,0 +1,7 @@
+pyaudio
+funasr
+torch
+torchaudio
+webrtcvad
+opencc
+ollama
