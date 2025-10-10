@@ -9,10 +9,8 @@ from utility.cli import CommandLineInterface as cli
 from utility.debug import *
 
 # Core
-from core.settings import *
 from core.core import *
-
-psettings = Setting()
+from core.config import *
 
 def main():
     parser = OptionParser(usage='Usage: aiassistant [options] ......')
@@ -25,22 +23,23 @@ def main():
 
     (options, args) = parser.parse_args()
 
+    cfmgr = AIConfigManager()
+
     if options.debug:
         DebugSetting.setDbgLevel("all")
         dbg_info('Enable Debug mode')
-        psettings.Info.Debug = True
     else:
         DebugSetting.setDbgLevel("information")
 
     # open file
     try:
+        dbg_info(f"Starting {cfmgr.config.about.program_name} v{cfmgr.config.about.version}")
         core = Core()
         core.initialize()
         core.start()
 
-        dbg_print(psettings.Message.Exit)
     except (OSError, KeyboardInterrupt):
-        dbg_error(psettings.Message.Exit)
+        dbg_error("Bye")
     except:
         raise
 if __name__ == '__main__':
