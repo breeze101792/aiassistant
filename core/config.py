@@ -1,6 +1,6 @@
 from utility.config import *
 
-class AIAppConfig(AppConfig):
+class AIAppConfig(BasicConfig):
     # Read only variable
     config_file = "./config.json"
     log_level = "Information"

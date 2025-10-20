@@ -32,7 +32,8 @@ pip install ollama
 * Repo owner or admin
 * Other community or team contact
 
-## Package
+## System Package
+Before install python packages, install the following pakages.
 ```
-funasr pyaudio torch torchaudio webrtcvad opencc titoken tzlocal duckduckgo-search bs4
+portaudio19-dev
 ```

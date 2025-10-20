@@ -5,3 +5,7 @@ torchaudio
 webrtcvad
 opencc
 ollama
+tiktoken
+tzlocal
+duckduckgo_search
+bs4
