@@ -2,18 +2,83 @@ from utility.debug import *
 from api.api import APIManager
 from api.apijson import APIManager
 
+from llm.ollama import OllamaService
+from llm.rkllama import RKLlamaService,RKOllamaService
+
 class BaseAgent:
-    def __init__(self, kernel = None):
-        if kernel is not None:
-            self.kernel = kernel
-        # if your model is 4k, please do 4k - 0.5k. This is for response message.
-        # self.token_compress_threshold = 3000
-        self.token_compress_target = 600
-        self.history = []
-        self.agent_description = "You are helpful assistant."
+    def __init__(self, kernel = None, tools = True):
+        # flags
+        self.flag_tools = tools
+
+        # class
         self.apimgr = APIManager()
+
+        # variable
+        self.agent_description = "You are helpful assistant."
+
+        if kernel is None:
+            # default we use qwen3:1.7b, it's fast and smart enough.
+            self.kernel = OllamaService(model='qwen3:1.7b', url = 'http://127.0.0.1:11434', token_limit=131072)
+            # self.kernel = OllamaService(model='qwen3:4b', url = 'http://127.0.0.1:11434', token_limit=131072)
+        else:
+            self.kernel = kernel
+
     def set_kernel(self, kernel):
         self.kernel = kernel
+
+    def message_compose(self, message):
+        api_prompt = self.apimgr.get_prompt()
+        msg_buf = []
+        if self.kernel.ServiceProvider == 'rkllama':
+            if self.flag_tools:
+                msg_buf.append({"role": "user", "content": self.agent_description + api_prompt })
+            else:
+                msg_buf.append({"role": "user", "content": self.agent_description})
+            msg_buf.append({"role": "assistant", "content": "ok"})
+        else:
+            msg_buf.append({"role": "system", "content": self.agent_description})
+            if self.flag_tools:
+                msg_buf.append({"role": "system", "content": api_prompt})
+
+        msg_buf.append({"role": "user", "content": message})
+
+        msg_buf = msg_buf
+        return msg_buf
+
+    def send_message(self, message):
+        # conpose message 
+        msg_buf = self.message_compose(message)
+
+        # get response 
+        response_buf = self.kernel.generate_response(msg_buf)
+        # print(f"asstant: {response_buf}")
+        api_result = self.apimgr.handle_ai_message(response_buf)
+        # if api_result != "":
+        dbg_trace(api_result['tool_results'])
+        while api_result != "" and len(api_result['tool_results']) != 0:
+            result_buf = f"""
+API Result: {api_result}
+"""
+            msg_buf.append({"role": "assistant", "content": response_buf})
+            if self.kernel.ServiceProvider == 'rkllama':
+                msg_buf.append({"role": "user", "content": result_buf})
+            else:
+                msg_buf.append({"role": "system", "content": result_buf})
+
+            response_buf = self.kernel.generate_response(msg_buf)
+
+            api_result = self.apimgr.handle_ai_message(response_buf)
+
+        return response_buf
+
+class ConversationalAgent(BaseAgent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # if your model is 4k, please do 4k - 0.5k. This is for response message.
+        # self.token_compress_threshold = 3000
+        self.history = []
+        self.token_compress_target = 600
+
     # Internal API
     def message_compose(self, message):
         msg_buf = []

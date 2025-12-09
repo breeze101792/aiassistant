@@ -3,6 +3,7 @@ import traceback
 from api.base import *
 from api.system import *
 from api.websearch import *
+from api.schedule import *
 from utility.debug import *
 
 class APIManager:
@@ -14,6 +15,11 @@ class APIManager:
         self.register_api(CurrentDateTimeAPI)
         self.register_api(SysCmdAPI)
         self.register_api(WebSearchAPI)
+
+        # schedule
+        self.register_api(AddScheduleAPI)
+        self.register_api(ListSchedulesAPI)
+        self.register_api(DeleteScheduleAPI)
 
     def register_api(self, api_ins):
         if self.api_function_table.get(api_ins.NAME, None) is None:

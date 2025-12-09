@@ -5,6 +5,7 @@ from utility.cli import *
 from llm.llm import *
 from agent.assistant import *
 from agent.scholar import *
+from agent.task import TaskAgent
 
 class AICLI(CommandLineInterface):
     def __init__(self):
@@ -19,8 +20,11 @@ class AICLI(CommandLineInterface):
         self.regist_cmd("agent", self.cmd_agent, description="Switch agent.", arg_list = self.total_agent_list)
         # self.total_agent_list = ['assistant', 'simple']
         # self.regist_cmd("llm", self.cmd_llm, description="Switch llm.", arg_list = self.total_agent_list)
+
         self.total_test_list = ['web', 'schedule', 'time']
         self.regist_cmd("test", self.cmd_test, description=f"Auto test current agent., args: {self.total_test_list}", arg_list = self.total_test_list)
+        self.total_task_test_list = ['linear', 'parallel', 'ambiguity']
+        self.regist_cmd("task", self.cmd_task, description=f"Auto test current agent., args: {self.total_test_list}", arg_list = self.total_task_test_list)
 
     def cmd_connect(self, args):
         pass
@@ -70,6 +74,29 @@ class AICLI(CommandLineInterface):
                 test_question = ['What time is it now?']
 
         assistant = self.current_agent()
+
+        for each_question in test_question:
+            dbg_info(f"Question: {each_question}")
+            assistant.send_message(each_question)
+        return True
+    def cmd_task(self, args):
+        test_list = self.total_task_test_list
+
+        test_question = []
+        if args['#'] == 1 and args['1'] in test_list:
+            if args['1'] == 'linear':
+                test_question = ["Download the latest arXiv paper on 'LLM Agents', summarize it in 3 bullet points, and save the result as a text file"]
+            elif args['1'] == 'parallel':
+                test_question = ["Find the current stock price of Apple, Google, and Microsoft, and then calculate the average price of these three"]
+            elif args['1'] == 'ambiguity':
+                test_question = ["Book a table for dinner tonight"]
+            elif args['1'] == 'conditional':
+                test_question = ["Check the weather in Taipei for tomorrow. If it rains, find a list of indoor museums; if it's sunny, find hiking trails nearby"]
+        else:
+            test_question = ["Check the weather in Taipei for tomorrow. If it rains, find a list of indoor museums; if it's sunny, find hiking trails nearby"]
+
+
+        assistant = TaskAgent()
 
         for each_question in test_question:
             dbg_info(f"Question: {each_question}")

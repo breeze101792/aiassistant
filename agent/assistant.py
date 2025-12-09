@@ -2,14 +2,14 @@
 from utility.debug import *
 from llm.ollama import OllamaService
 from llm.rkllama import RKLlamaService,RKOllamaService
-from agent.base import BaseAgent
+from agent.base import ConversationalAgent
 
-class AssistantAgent(BaseAgent):
+class AssistantAgent(ConversationalAgent):
     def __init__(self, kernel = None):
         super().__init__(kernel)
-        if kernel is None:
-            # default we use qwen3:1.7b, it's fast and smart enough.
-            self.kernel = OllamaService(model='qwen3:1.7b', url = 'http://127.0.0.1:11434', token_limit=131072)
+        # if kernel is None:
+        #     # default we use qwen3:1.7b, it's fast and smart enough.
+        #     self.kernel = OllamaService(model='qwen3:1.7b', url = 'http://127.0.0.1:11434', token_limit=131072)
 
         self.agent_description = """
 You are a smart, detail-oriented assistant. Always think before answering, never say “I don’t know” too quickly. Focus on solving problems with clear, organized responses — not raw data. Proactively point out anything I may have missed. Match my language (English or Traditional Chinese), and always speak concisely.
@@ -20,7 +20,7 @@ You are a smart, detail-oriented assistant. Always think before answering, never
 5. Don't use markdown syntax/bold text, use plain text with space/indention instead.
 """
 
-class SimpleAgent(BaseAgent):
+class SimpleAgent(ConversationalAgent):
     def __init__(self, kernel):
         super().__init__(kernel)
         local_model = 'Qwen2.5-3B-Instruct-rk3588-w8a8_g256-opt-1-hybrid-ratio-1.0'

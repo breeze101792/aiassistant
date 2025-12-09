@@ -77,11 +77,11 @@ class AddScheduleAPI(BaseAPI):
     PARAMETERS = {
         "time": "string – ISO8601 format datetime string. Example: '2025-04-06T10:00:00'",
         "llm_input": "string – The message to send to LLM at the scheduled time.",
-        "description": "string – A description of the scheduled task.",
-        "repeat": "string – Optional. Can be 'daily', 'weekly', or 'hourly'."
+        "description": "string – Optional. A description of the scheduled task.",
+        "repeat": "string – Optional. Can be 'daily', 'weekly', 'hourly' or 'none'."
     }
 
-    def execute(self, time, llm_input, description, repeat=None):
+    def execute(self, time, llm_input, description = "", repeat=None):
         task = {
             "id": str(uuid.uuid4()),
             "time": time,
