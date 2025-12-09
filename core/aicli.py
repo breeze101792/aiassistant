@@ -81,13 +81,15 @@ class AICLI(CommandLineInterface):
 
         while True:
             try:
-                msg = input("User :")
+                msg = input("User: ")
                 assistant.send_message(msg)
+            except (KeyboardInterrupt, EOFError):
+                assistant.send_message("Good bye.")
+                # dbg_info("Keyboard Interupt.")
+                break
             except Exception as e:
                 dbg_error(e)
                 traceback_output = traceback.format_exc()
                 dbg_error(traceback_output)
-            except KeyboardInterrupt:
-                dbg_info("Keyboard Interupt.")
-                break
+        return True
 

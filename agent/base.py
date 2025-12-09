@@ -75,7 +75,7 @@ This summarized history contains the key points and context of our previous inte
         # print(f"asstant: {response_buf}")
         api_result = self.apimgr.handle_ai_message(response_buf)
         # if api_result != "":
-        dbg_print(api_result['tool_results'])
+        dbg_trace(api_result['tool_results'])
         while api_result != "" and len(api_result['tool_results']) != 0:
             result_buf = f"""
 API Result: {api_result}

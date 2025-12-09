@@ -28,8 +28,8 @@ def main():
     if options.debug:
         DebugSetting.setDbgLevel("all")
         dbg_info('Enable Debug mode')
-    else:
-        DebugSetting.setDbgLevel("information")
+    # else:
+    #     DebugSetting.setDbgLevel("information")
 
     # open file
     try:

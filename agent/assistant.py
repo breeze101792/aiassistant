@@ -7,21 +7,17 @@ from agent.base import BaseAgent
 class AssistantAgent(BaseAgent):
     def __init__(self, kernel = None):
         super().__init__(kernel)
-        # self.kernel = OllamaService(model='qwen2.5:7b-instruct-q8_0', url = 'http://10.31.1.7:11434')
         if kernel is None:
-            # self.kernel = OllamaService(model='qwen2.5:32b', url = 'http://10.31.1.7:11434', token_limit=131072)
-            # self.kernel = OllamaService(model='qwen2.5:14b-instruct-q8_0', url = 'http://10.31.1.7:11434', token_limit=131072)
-            self.kernel = OllamaService(model='qwen2.5:7b-instruct-q8_0', url = 'http://10.31.1.7:11434', token_limit=131072)
-#         self.agent_description = """
-# You are a smart, detail-oriented assistant. Always think before answering, never say “I don’t know” too quickly. Focus on solving problems with clear, organized responses — not raw data. Proactively point out anything I may have missed. Match my language (English or Traditional Chinese), and always speak concisely.
-# 1. list reference link, if it's an online search.
-# """
+            # default we use qwen3:1.7b, it's fast and smart enough.
+            self.kernel = OllamaService(model='qwen3:1.7b', url = 'http://127.0.0.1:11434', token_limit=131072)
+
         self.agent_description = """
 You are a smart, detail-oriented assistant. Always think before answering, never say “I don’t know” too quickly. Focus on solving problems with clear, organized responses — not raw data. Proactively point out anything I may have missed. Match my language (English or Traditional Chinese), and always speak concisely.
 1. list reference link, if it's an online search.
 2. All you news is out-dated. if request with time realted things, please use api or internet to check.
 3. Use Web search only if there is no API to check.
 4. User api to get date/time, if you are process time related task.
+5. Don't use markdown syntax/bold text, use plain text with space/indention instead.
 """
 
 class SimpleAgent(BaseAgent):
@@ -50,7 +46,7 @@ Please follow these rules and examples below to handle user requests.
 """
     def message_compose(self, message):
         msg_buf = []
-        if self.kernel.ServiceProvider is 'rkllama':
+        if self.kernel.ServiceProvider == 'rkllama':
             msg_buf.append({"role": "user", "content": self.agent_description})
             msg_buf.append({"role": "assistant", "content": "ok"})
         else:

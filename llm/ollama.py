@@ -18,7 +18,7 @@ class OllamaService(BaseService):
         # self.model='qwen2.5:1.5b'
 
     # Function to send a chat message
-    def generate_response(self, message, hidden = False):
+    def generate_response(self, message, hidden = False, name = "AI"):
         dbg_trace(f"Message: {message}")
         # self.history = []
         # self.system_prompt = "You are a help full assistant"
@@ -37,7 +37,10 @@ class OllamaService(BaseService):
             )
 
             replay_message = ''
+            print(f"{name}: ", end = '')
             for chunk in stream:
+                # for the first chunk, we print then ai name.
+
                 if not hidden:
                     print(chunk['message']['content'], end='', flush=True)
                 replay_message +=chunk['message']['content']
