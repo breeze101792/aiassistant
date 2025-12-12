@@ -35,5 +35,5 @@ pip install ollama
 ## System Package
 Before install python packages, install the following pakages.
 ```
-portaudio19-dev
+portaudio19-dev  python3-dev
 ```
