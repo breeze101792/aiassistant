@@ -6,7 +6,7 @@ from utility.debug import *
 
 class BaseService:
     ServiceProvider = ''
-    def __init__(self, model = None, url = None, token_limit = 10000):
+    def __init__(self, model = None, url = None, api_key = "", token_limit = 10000):
         if model is not None:
             self.server_url = url
         else:
@@ -15,6 +15,9 @@ class BaseService:
             self.model=model
         else:
             self.model = "deepseek-r1"
+
+        self.api_key = api_key
+
         self.token_limit = token_limit
 
     def connect(self):

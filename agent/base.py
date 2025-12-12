@@ -1,8 +1,10 @@
 from utility.debug import *
+import os
 from api.api import APIManager
 from api.apijson import APIManager
 
 from llm.ollama import OllamaService
+from llm.openai import OpenaiService
 
 class BaseAgent:
     def __init__(self, kernel = None, tools = True):
