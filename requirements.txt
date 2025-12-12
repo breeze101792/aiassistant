@@ -7,5 +7,5 @@ opencc
 ollama
 tiktoken
 tzlocal
-duckduckgo_search
+ddgs
 bs4

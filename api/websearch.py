@@ -1,11 +1,12 @@
 # Websearch
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 import requests
 from bs4 import BeautifulSoup
 import random
 
 from api.base import BaseAPI
 
+from utility.debug import *
 class WebSearchAPI(BaseAPI):
     NAME = "WebSearchAPI"
     DESCRIPTION = "Search online with query, to get the latest/realtime informations."
@@ -56,7 +57,7 @@ class WebSearchAPI(BaseAPI):
             else:
                 return None  # Skip content if keyword not found
         except Exception as e:
-            print(f"Error fetching {url}: {e}")
+            dbg_error(f"Error fetching {url}: {e}")
             return None
     def execute(self, query):
         max_result = 10

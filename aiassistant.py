@@ -24,14 +24,17 @@ def main():
     (options, args) = parser.parse_args()
 
     cfmgr = AIConfigManager()
+    cfmgr.load()
 
     if options.debug:
         DebugSetting.setDbgLevel("all")
         dbg_info('Enable Debug mode')
-    else:
-        DebugSetting.setDbgLevel("information")
+    # else:
+    #     DebugSetting.setDbgLevel("information")
 
     # open file
+
+
     try:
         dbg_info(f"Starting {cfmgr.config.about.program_name} v{cfmgr.config.about.version}")
         core = Core()

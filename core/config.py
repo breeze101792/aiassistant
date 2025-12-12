@@ -12,5 +12,5 @@ class AIAppConfig(BasicConfig):
 
 class AIConfigManager(ConfigManager):
     config = None
-    def __init__(self):
-        self.config = AIAppConfig
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args,config=AIAppConfig, **kwargs)
