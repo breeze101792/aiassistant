@@ -1,6 +1,7 @@
 # from llm.llm import *
 from utility.debug import *
 from agent.base import BaseAgent
+import json
 
 class TaskAgent(BaseAgent):
     def __init__(self):
@@ -67,7 +68,13 @@ Output:
   }
 ]
 """
+    def getTaskList(self, message):
+        respone = self.send_message(message)
 
-        backup = """
+        json_task_list = json.loads(respone)
+        task_list = []
+        for each_task in json_task_list:
+            print(f"{each_task.get('id', -1)}. {each_task.get('task_name', '')}: {each_task.get('description', '')}")
+            task_list.append(f"{each_task.get('task_name', '')}: {each_task.get('description', '')}")
 
-"""
+        return task_list

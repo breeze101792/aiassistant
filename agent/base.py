@@ -3,7 +3,6 @@ from api.api import APIManager
 from api.apijson import APIManager
 
 from llm.ollama import OllamaService
-from llm.rkllama import RKLlamaService,RKOllamaService
 
 class BaseAgent:
     def __init__(self, kernel = None, tools = True):
@@ -19,6 +18,7 @@ class BaseAgent:
         if kernel is None:
             # default we use qwen3:1.7b, it's fast and smart enough.
             self.kernel = OllamaService(model='qwen3:1.7b', url = 'http://127.0.0.1:11434', token_limit=131072)
+            # self.kernel = OllamaService(model='qwen3:0.6b', url = 'http://127.0.0.1:11434', token_limit=131072)
             # self.kernel = OllamaService(model='qwen3:4b', url = 'http://127.0.0.1:11434', token_limit=131072)
         else:
             self.kernel = kernel
@@ -29,16 +29,10 @@ class BaseAgent:
     def message_compose(self, message):
         api_prompt = self.apimgr.get_prompt()
         msg_buf = []
-        if self.kernel.ServiceProvider == 'rkllama':
-            if self.flag_tools:
-                msg_buf.append({"role": "user", "content": self.agent_description + api_prompt })
-            else:
-                msg_buf.append({"role": "user", "content": self.agent_description})
-            msg_buf.append({"role": "assistant", "content": "ok"})
-        else:
-            msg_buf.append({"role": "system", "content": self.agent_description})
-            if self.flag_tools:
-                msg_buf.append({"role": "system", "content": api_prompt})
+
+        msg_buf.append({"role": "system", "content": self.agent_description})
+        if self.flag_tools:
+            msg_buf.append({"role": "system", "content": api_prompt})
 
         msg_buf.append({"role": "user", "content": message})
 
@@ -60,14 +54,13 @@ class BaseAgent:
 API Result: {api_result}
 """
             msg_buf.append({"role": "assistant", "content": response_buf})
-            if self.kernel.ServiceProvider == 'rkllama':
-                msg_buf.append({"role": "user", "content": result_buf})
-            else:
-                msg_buf.append({"role": "system", "content": result_buf})
+
+            msg_buf.append({"role": "system", "content": result_buf})
 
             response_buf = self.kernel.generate_response(msg_buf)
 
-            api_result = self.apimgr.handle_ai_message(response_buf)
+            if self.flag_tools:
+                api_result = self.apimgr.handle_ai_message(response_buf)
 
         return response_buf
 
@@ -82,12 +75,9 @@ class ConversationalAgent(BaseAgent):
     # Internal API
     def message_compose(self, message):
         msg_buf = []
-        if self.kernel.ServiceProvider == 'rkllama':
-            msg_buf.append({"role": "user", "content": self.agent_description + self.apimgr.get_prompt()})
-            msg_buf.append({"role": "assistant", "content": "ok"})
-        else:
-            msg_buf.append({"role": "system", "content": self.agent_description})
-            msg_buf.append({"role": "system", "content": self.apimgr.get_prompt()})
+
+        msg_buf.append({"role": "system", "content": self.agent_description})
+        msg_buf.append({"role": "system", "content": self.apimgr.get_prompt()})
 
         self.history.append({"role": "user", "content": message})
 
@@ -117,10 +107,7 @@ We have had previous conversations that are relevant to our ongoing discussion. 
 This summarized history contains the key points and context of our previous interactions. Please use this information as context for any future responses.
 """
         self.history = []
-        if self.kernel.ServiceProvider == 'rkllama':
-            self.history.append({"role": "user", "content": compressed_history})
-        else:
-            self.history.append({"role": "system", "content": compressed_history})
+        self.history.append({"role": "system", "content": compressed_history})
         self.history.append({"role": "assistant", "content": "ok."})
         self.history = self.history + latest_history
         # self.history = [{"role": "system", "content": f"recap for previous chat. self.agent_description"}]
@@ -146,10 +133,8 @@ This summarized history contains the key points and context of our previous inte
 API Result: {api_result}
 """
             msg_buf.append({"role": "assistant", "content": response_buf})
-            if self.kernel.ServiceProvider == 'rkllama':
-                msg_buf.append({"role": "user", "content": result_buf})
-            else:
-                msg_buf.append({"role": "system", "content": result_buf})
+
+            msg_buf.append({"role": "tools", "content": result_buf})
 
             response_buf = self.kernel.generate_response(msg_buf)
 

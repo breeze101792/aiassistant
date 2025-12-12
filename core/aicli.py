@@ -93,14 +93,23 @@ class AICLI(CommandLineInterface):
             elif args['1'] == 'conditional':
                 test_question = ["Check the weather in Taipei for tomorrow. If it rains, find a list of indoor museums; if it's sunny, find hiking trails nearby"]
         else:
-            test_question = ["Check the weather in Taipei for tomorrow. If it rains, find a list of indoor museums; if it's sunny, find hiking trails nearby"]
+            test_question = ["Find the current stock price of Apple, Google, and Microsoft, and then calculate the average price of these three"]
 
 
-        assistant = TaskAgent()
+        assistant = self.current_agent()
+        task_agent = TaskAgent()
 
         for each_question in test_question:
+
+            question = "Original Question: "
             dbg_info(f"Question: {each_question}")
-            assistant.send_message(each_question)
+            task = task_agent.getTaskList(each_question)
+            for each_task in task:
+                print(each_task)
+                assistant.send_message(each_task)
+            buffer = assistant.send_message(each_question)
+            print('Ans: ' , buffer)
+
         return True
 
     def cmd_chat(self, args):
