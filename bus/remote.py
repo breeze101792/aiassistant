@@ -18,6 +18,7 @@ class RemoteBus:
         self.auth_token = auth_token
         self._server = None
         self._clients: dict[str, any] = {}
+        self._client_subscriptions: dict[str, list[str]] = {}
 
     async def start(self) -> None:
         try:
@@ -80,13 +81,16 @@ class RemoteBus:
                             def callback(t, p):
                                 asyncio.ensure_future(self._forward(ws, t, p))
                             return callback
-                        self.bus.subscribe(topic, make_callback(client_id, websocket))
+                        sub_id = self.bus.subscribe(topic, make_callback(client_id, websocket))
+                        self._client_subscriptions.setdefault(client_id, []).append(sub_id)
 
                 except json.JSONDecodeError:
                     pass
         except Exception as e:
             logger.debug(f"Remote client disconnected: {client_id} — {e}")
         finally:
+            for sub_id in self._client_subscriptions.pop(client_id, []):
+                self.bus.unsubscribe(sub_id)
             if module_name != "unknown":
                 self.bus.registry.remove(module_name)
                 self.bus.publish("bus.module.disconnected", {

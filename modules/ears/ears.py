@@ -1,4 +1,5 @@
 import logging
+import threading
 
 from modules.base import BaseModule
 
@@ -21,6 +22,7 @@ class EarsModule(BaseModule):
         self.silence_timeout = ears_cfg.get("silence_timeout", 20)
         self._backend = None
         self._state = "idle"  # idle | listening | paused
+        self._state_lock = threading.Lock()
 
     async def setup(self) -> bool:
         if self.backend_name == "stub":
@@ -78,7 +80,8 @@ class EarsModule(BaseModule):
 
     def _start_listening(self):
         if hasattr(self._backend, "start"):
-            self._state = "listening"
+            with self._state_lock:
+                self._state = "listening"
             self._backend.start()
 
     def _on_speech(self, text: str):
@@ -90,28 +93,33 @@ class EarsModule(BaseModule):
         })
 
     async def _handle_start(self, topic: str, payload: dict) -> None:
-        if self._state != "listening":
-            self._start_listening()
-            logger.debug("Ears: started listening")
+        with self._state_lock:
+            if self._state != "listening":
+                self._start_listening()
+                logger.debug("Ears: started listening")
 
     async def _handle_stop(self, topic: str, payload: dict) -> None:
         if hasattr(self._backend, "stop"):
             self._backend.stop()
-        self._state = "idle"
+        with self._state_lock:
+            self._state = "idle"
         logger.debug("Ears: stopped")
 
     async def _handle_pause(self, topic: str, payload: dict) -> None:
         if hasattr(self._backend, "pause"):
             self._backend.pause()
-        self._state = "paused"
+        with self._state_lock:
+            self._state = "paused"
         logger.debug("Ears: paused")
 
     async def _handle_resume(self, topic: str, payload: dict) -> None:
         if hasattr(self._backend, "start") and not hasattr(self._backend, "resume"):
-            self._backend.start()
+            if not getattr(self._backend, '_running', False):
+                self._backend.start()
         elif hasattr(self._backend, "resume"):
             self._backend.resume()
-        self._state = "listening"
+        with self._state_lock:
+            self._state = "listening"
         logger.debug("Ears: resumed")
 
     async def _handle_mouth_started(self, topic: str, payload: dict) -> None:

@@ -100,6 +100,8 @@ class HandsModule(BaseModule):
                     attr not in (ToolBase, SkillBase)):
                 try:
                     instance = attr()
+                    if hasattr(instance, 'set_bus'):
+                        instance.set_bus(self.bus)
                     if instance.name:
                         self._tools[instance.name] = instance
                         logger.debug(f"Registered tool: {instance.name}")

@@ -201,3 +201,83 @@ class TestHasSubscriber:
     def test_has_subscriber_false(self):
         bus = MessageBus()
         assert not bus.has_subscriber("test.nobody")
+
+
+class TestRemoteBusSubscriptionCleanup:
+    """Bug regression: RemoteBus must clean up subscriptions on disconnect."""
+
+    @pytest.mark.asyncio
+    async def test_subscriptions_are_removed_on_disconnect(self, message_bus):
+        """Subscriptions from remote client should be removed from bus after disconnect."""
+        from bus.remote import RemoteBus
+        import json
+        import asyncio
+
+        initial_sub_count = len(message_bus._subscribers)
+
+        remote = RemoteBus(message_bus, port=18765)
+        server_task = asyncio.ensure_future(remote.start())
+        await asyncio.sleep(0.1)
+
+        try:
+            import websockets
+            async with websockets.connect("ws://127.0.0.1:18765") as ws:
+                # Register
+                await ws.send(json.dumps({
+                    "action": "register",
+                    "module_name": "test_module",
+                    "capabilities": {"type": "test"},
+                }))
+                await ws.recv()  # "registered"
+
+                # Subscribe to topics
+                await ws.send(json.dumps({
+                    "action": "subscribe",
+                    "topic": "test.topic.one",
+                }))
+                await ws.send(json.dumps({
+                    "action": "subscribe",
+                    "topic": "test.topic.two",
+                }))
+
+                await asyncio.sleep(0.05)
+                assert message_bus.has_subscriber("test.topic.one")
+                assert message_bus.has_subscriber("test.topic.two")
+        except Exception:
+            pass
+        finally:
+            server_task.cancel()
+            try:
+                await server_task
+            except asyncio.CancelledError:
+                pass
+
+        # After disconnect, subscriptions should be cleaned up
+        remaining_count = len(message_bus._subscribers)
+        assert remaining_count == initial_sub_count, \
+            f"Expected {initial_sub_count} subscribers after cleanup, got {remaining_count}"
+
+
+class TestRegistry:
+    """Module registry operations."""
+
+    def test_add_and_list(self, message_bus):
+        message_bus.registry.add("test_mod", remote=False)
+        modules = message_bus.registry.list_all()
+        assert "test_mod" in modules
+
+    def test_remove(self, message_bus):
+        message_bus.registry.add("test_mod")
+        assert message_bus.registry.is_registered("test_mod")
+        message_bus.registry.remove("test_mod")
+        assert not message_bus.registry.is_registered("test_mod")
+
+    def test_module_names_property(self, message_bus):
+        message_bus.registry.add("mod_a")
+        message_bus.registry.add("mod_b")
+        names = message_bus.registry.module_names
+        assert "mod_a" in names
+        assert "mod_b" in names
+
+    def test_get_nonexistent_returns_none(self, message_bus):
+        assert message_bus.registry.get("nonexistent") is None

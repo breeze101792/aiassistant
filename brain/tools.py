@@ -16,6 +16,14 @@ class ToolCache:
     def get_schemas(self) -> list[dict]:
         return self._schemas
 
+    def get_formatted_schemas(self) -> list[dict]:
+        """Return schemas in OpenAI function-calling format."""
+        return [{"type": "function", "function": s} for s in self._schemas]
+
+    def get_tool_list(self) -> list[dict]:
+        """Return raw tool dicts (name, description, parameters)."""
+        return list(self._tools.values())
+
     def lookup(self, name: str) -> dict | None:
         return self._tools.get(name)
 

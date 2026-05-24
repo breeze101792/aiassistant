@@ -6,14 +6,15 @@ Usage:
 
 Options:
   -c, --config PATH   Config file path (default: config.yaml)
-  -v, --verbose       Enable verbose logging (DEBUG level)
+  -v, --verbose       Enable debug logging (default: warnings only)
+  --audio             Start in audio chat mode (mic + TTS)
   -h, --help          Show this help and exit
 
 Examples:
-  python main.py                       # Start with config.yaml, INFO logging
+  python main.py                       # Start with config.yaml, text-only
+  python main.py --audio               # Start in audio chat mode
+  python main.py --audio -v            # Audio chat with debug logging
   python main.py -c my_config.yaml     # Use custom config file
-  python main.py -v                    # Start with debug logging
-  python main.py -c prod.yaml -v       # Custom config + debug mode
 
 Config:
   config.yaml controls all modules. Each module has its own section.
@@ -96,12 +97,22 @@ def import_module_class(module_path: str, class_name: str):
 
 
 class AssistantRunner:
-    def __init__(self, config_path: str = "config.yaml"):
+    def __init__(self, config_path: str = "config.yaml", config_overrides: dict | None = None):
         self.config = load_config(config_path)
+        if config_overrides:
+            self._apply_overrides(config_overrides)
         self.bus = MessageBus()
         self.modules: dict[str, object] = {}
         self.remote_bus: RemoteBus | None = None
         self._shutdown_event = asyncio.Event()
+
+    def _apply_overrides(self, overrides: dict) -> None:
+        for dotted_key, value in overrides.items():
+            parts = dotted_key.split(".")
+            target = self.config
+            for part in parts[:-1]:
+                target = target.setdefault(part, {})
+            target[parts[-1]] = value
 
     async def start(self):
         logger.info("Starting AI Assistant...")
@@ -150,6 +161,7 @@ class AssistantRunner:
                     logger.warning(f"Non-critical module {name} disabled")
 
         logger.info("All modules started. Assistant ready.")
+        self.bus.publish("status.assistant.ready", {})
 
         # Wait for shutdown
         await self._shutdown_event.wait()
@@ -176,7 +188,9 @@ def parse_args():
     parser.add_argument("-c", "--config", default="config.yaml",
                         metavar="PATH", help="Config file path (default: config.yaml)")
     parser.add_argument("-v", "--verbose", action="store_true",
-                        help="Enable DEBUG logging")
+                        help="Enable debug logging (default: warnings only)")
+    parser.add_argument("--audio", action="store_true",
+                        help="Start in audio chat mode (mic input + TTS output)")
     parser.add_argument("-h", "--help", action="store_true",
                         help="Show help message and exit")
     return parser
@@ -197,11 +211,16 @@ async def main():
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     ))
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=logging.DEBUG if args.verbose else logging.WARNING,
         handlers=[handler],
     )
 
-    runner = AssistantRunner(args.config)
+    overrides = {}
+    if args.audio:
+        overrides["ears.backend"] = "halasr"
+        overrides["mouth.backend"] = "edge_tts"
+
+    runner = AssistantRunner(args.config, config_overrides=overrides if overrides else None)
 
     loop = asyncio.get_event_loop()
 

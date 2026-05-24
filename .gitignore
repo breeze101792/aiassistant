@@ -172,9 +172,12 @@ cython_debug/
 .pyvenv
 
 # Project-specific — runtime data
-data/
-!data/.gitkeep
+.config/aiassistant/
+!.config/aiassistant/.gitkeep
 
 # Local config overrides (never commit)
 config.local.yaml
 *.local.*
+
+data
+user_memory.txt

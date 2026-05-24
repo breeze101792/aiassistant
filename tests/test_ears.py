@@ -1,5 +1,4 @@
 import os
-import tempfile
 import wave
 
 import pytest
@@ -8,9 +7,6 @@ from modules.ears.ears import EarsModule
 from modules.ears.asr_backends.stub import StubASR
 from modules.ears.asr_backends.base import ASRBackend
 from modules.ears.asr_backends.halasr import HalASRBackend, _load_funasr_model
-from modules.mouth.mouth import MouthModule
-from modules.mouth.tts_backends.text import TextTTS
-from modules.mouth.tts_backends.base import TTSBackend
 from bus.bus import MessageBus
 
 
@@ -52,7 +48,6 @@ class TestHalASR:
         backend = HalASRBackend()
         backend.start()
         backend.stop()
-        # should not crash
 
     def test_pause_resume(self):
         backend = HalASRBackend()
@@ -98,7 +93,6 @@ class TestHalASR:
         silence = np.zeros(frame_len, dtype=np.int16).tobytes()
         assert vad.is_speech(silence, 48000) is False
 
-        # Generate loud noise
         noise = np.random.randint(-32768, 32767, frame_len, dtype=np.int16).tobytes()
         assert vad.is_speech(noise, 48000) is True
 
@@ -112,7 +106,6 @@ class TestHalASR:
                 frame_len = int(rate * ms / 1000)
                 if webrtcvad.valid_rate_and_frame_length(rate, frame_len):
                     valid_combos.append((rate, ms))
-        # At minimum, 20ms frames should be valid at all rates
         assert any(ms == 20 for _, ms in valid_combos)
         assert len(valid_combos) >= 4
 
@@ -129,7 +122,7 @@ class TestHalASR:
             "modules.ears.asr_backends.halasr.PYAUDIO_AVAILABLE", False
         )
         backend = HalASRBackend()
-        backend.start()  # should not crash, just log error
+        backend.start()
         backend.stop()
 
     def test_list_audio_devices_handles_missing_pyaudio(self, capsys, monkeypatch):
@@ -148,7 +141,6 @@ class TestHalASR:
         monkeypatch.setattr(
             "modules.ears.asr_backends.halasr._MODEL_ERROR", None
         )
-        # Simulate torch not installed
         with monkeypatch.context() as ctx:
             ctx.setitem(sys.modules, "torch", None)
             model = _load_funasr_model()
@@ -194,30 +186,92 @@ class TestEarsModule:
             }
         })
         await ears.setup()
-        # Prevent real audio thread from spawning in test
         monkeypatch.setattr(ears._backend, "start", lambda: None)
         await ears.start()
-        assert ears._state == 'listening'  # halasr auto-starts
+        assert ears._state == 'listening'
 
-
-class TestTextTTS:
-    def test_speak_prints_to_stdout(self, capsys):
-        tts = TextTTS()
-        tts.speak('Hello world')
-        captured = capsys.readouterr()
-        assert 'Hello world' in captured.out
-
-    def test_is_instance_of_base(self):
-        assert isinstance(TextTTS(), TTSBackend)
-
-
-class TestMouthModule:
-    def test_module_name(self):
+    @pytest.mark.asyncio
+    async def test_resume_does_not_duplicate_threads(self, monkeypatch):
+        """Bug regression: _handle_resume must not create duplicate listen threads."""
         bus = MessageBus()
-        mouth = MouthModule(bus, {'backend': 'text'})
-        assert mouth.module_name == 'mouth'
+        ears = EarsModule(bus, {
+            'ears': {
+                'backend': 'halasr',
+                'hotwords': [],
+                'silence_timeout': 20,
+            }
+        })
+        await ears.setup()
 
-    def test_text_backend_selected(self):
+        start_count = [0]
+
+        class MockBackend:
+            is_running = False
+
+            def start(self):
+                start_count[0] += 1
+                MockBackend.is_running = True
+
+            def pause(self):
+                MockBackend.is_running = False
+
+            def resume(self):
+                MockBackend.is_running = True
+
+            def stop(self):
+                MockBackend.is_running = False
+
+            def mute(self):
+                pass
+
+            def unmute(self):
+                pass
+
+        ears._backend = MockBackend()
+        ears._state = 'listening'
+        ears._backend.start()
+
+        # Pause then resume — should call resume(), not start() again
+        await ears._handle_pause("", {})
+        assert ears._state == 'paused'
+        await ears._handle_resume("", {})
+        assert ears._state == 'listening'
+        assert start_count[0] == 1  # start() only called once, resume handles subsequent
+
+    @pytest.mark.asyncio
+    async def test_resume_without_resume_method_falls_back_to_start(self, monkeypatch):
+        """Backend without resume() should call start() again, but only once."""
         bus = MessageBus()
-        mouth = MouthModule(bus, {'backend': 'text'})
-        assert mouth.backend_name == 'text'
+        ears = EarsModule(bus, {
+            'ears': {
+                'backend': 'halasr',
+                'hotwords': [],
+                'silence_timeout': 20,
+            }
+        })
+        await ears.setup()
+
+        start_count = [0]
+
+        class NoResumeBackend:
+            def start(self):
+                start_count[0] += 1
+
+            def pause(self):
+                pass
+
+            def stop(self):
+                pass
+
+            def mute(self):
+                pass
+
+            def unmute(self):
+                pass
+
+        ears._backend = NoResumeBackend()
+        ears._state = 'listening'
+
+        await ears._handle_pause("", {})
+        await ears._handle_resume("", {})
+        assert start_count[0] == 1  # start called once as fallback for missing resume

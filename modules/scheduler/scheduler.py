@@ -18,7 +18,7 @@ class SchedulerModule(BaseModule):
     def __init__(self, bus, config: dict):
         super().__init__(bus, config)
         sched_cfg = config.get("scheduler", {})
-        self.storage = ScheduleStorage(sched_cfg.get("storage_path", "./data/schedules.json"))
+        self.storage = ScheduleStorage(sched_cfg.get("storage_path", ".config/aiassistant/schedules.json"))
         self.max_pending = sched_cfg.get("max_pending", 100)
         self._running = False
         self._task: asyncio.Task | None = None

@@ -134,3 +134,25 @@ class TestToolCache:
         tc = ToolCache()
         assert tc.get_schemas() == []
         assert tc.tool_names == []
+
+    def test_get_formatted_schemas(self):
+        tc = ToolCache()
+        tc.load([
+            {'name': 'test', 'description': 'Test tool', 'parameters': {'type': 'object', 'properties': {'x': {'type': 'int'}}}}
+        ])
+        formatted = tc.get_formatted_schemas()
+        assert len(formatted) == 1
+        assert formatted[0]['type'] == 'function'
+        assert formatted[0]['function']['name'] == 'test'
+        assert formatted[0]['function']['description'] == 'Test tool'
+        assert 'parameters' in formatted[0]['function']
+
+    def test_get_tool_list(self):
+        tc = ToolCache()
+        tc.load([
+            {'name': 'test', 'description': 'T', 'parameters': {}},
+            {'name': 'other', 'description': 'O', 'parameters': {}},
+        ])
+        tool_list = tc.get_tool_list()
+        assert len(tool_list) == 2
+        assert {t['name'] for t in tool_list} == {'test', 'other'}

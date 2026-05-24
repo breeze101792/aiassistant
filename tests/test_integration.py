@@ -5,6 +5,50 @@ from bus.bus import MessageBus
 from brain.brain import BrainModule
 from modules.hands.hands import HandsModule
 from modules.scheduler.scheduler import SchedulerModule
+from llm.base import LLMBackend
+
+
+class MockToolLLM(LLMBackend):
+    """Mock LLM that returns tool_calls for testing the full tool pipeline."""
+
+    def __init__(self, model="mock", url=""):
+        self.model = model
+        self.url = url
+        self.api_key = ""
+        self.chat_calls: list[dict] = []
+        self.embed_calls: list[list[str]] = []
+
+    def chat(self, messages, tools=None, max_tokens=4096, temperature=0.7):
+        call = {"messages": [dict(m) for m in messages], "tools": tools}
+        self.chat_calls.append(call)
+
+        # If this is the first call and tools are available, return a tool_call
+        if tools and len(self.chat_calls) == 1:
+            return {
+                "content": "Let me look that up.",
+                "tool_calls": [{
+                    "id": "call_001",
+                    "name": "datetime",
+                    "arguments": "{}",
+                }],
+                "usage": {"total_tokens": 30},
+            }
+        # Second call (after tool results), return a synthesized answer
+        return {
+            "content": "Today is Monday, May 24, 2026.",
+            "tool_calls": None,
+            "usage": {"total_tokens": 20},
+        }
+
+    def embed(self, text):
+        self.embed_calls.append(text if isinstance(text, list) else [text])
+        return [0.1, 0.2, 0.3]
+
+    def embed_batch(self, texts):
+        return [self.embed(t) for t in texts]
+
+    def token_count(self, messages):
+        return 100
 
 
 @pytest.fixture
@@ -21,10 +65,10 @@ def config():
                 "temperature": 0.7,
             },
             "memory": {
-                "conversations_path": "./data/memory/conversations",
-                "facts_path": "./data/memory/facts",
-                "knowledge_path": "./data/memory/knowledge",
-                "embeddings_db": "./data/embeddings.db",
+                "conversations_path": ".config/aiassistant/memory/conversations",
+                "facts_path": ".config/aiassistant/memory/facts",
+                "knowledge_path": ".config/aiassistant/memory/knowledge",
+                "embeddings_db": ".config/aiassistant/embeddings.db",
                 "context_max_tokens": 4096,
                 "context_recent_messages": 20,
             },
@@ -38,7 +82,7 @@ def config():
             "safe_paths": ["./workspace", "/tmp/aiassistant"],
         },
         "scheduler": {
-            "storage_path": "./data/schedules.json",
+            "storage_path": ".config/aiassistant/schedules.json",
             "max_pending": 100,
         },
     }
@@ -191,3 +235,157 @@ class TestModuleLifecycle:
             await mod.stop()
 
         assert True  # no crashes
+
+
+class TestToolCallingWithMockLLM:
+    """End-to-end tool calling using a mock LLM (no real Ollama needed)."""
+
+    @pytest.mark.asyncio
+    async def test_brain_receives_tool_schemas_from_hands(self, config):
+        """Verify Brain subscribes to status.hands.ready and loads tool schemas."""
+        bus = MessageBus()
+        brain = BrainModule(bus, config)
+        hands = HandsModule(bus, config)
+
+        await brain.setup()
+        await hands.setup()
+
+        # Replace with mock LLM after setup
+        mock_llm = MockToolLLM()
+        brain.llm = mock_llm
+        brain._reasoner.llm = mock_llm
+
+        # Tools should be empty before Hands starts
+        assert len(brain.tool_cache.tool_names) == 0
+
+        await brain.start()
+        await hands.start()
+
+        # Let scheduled event-loop tasks (like status.hands.ready handler) complete
+        await asyncio.sleep(0.01)
+
+        # After Hands starts, Brain should have loaded tools
+        assert len(brain.tool_cache.tool_names) > 0
+        assert "datetime" in brain.tool_cache.tool_names
+        assert brain._reasoner._tool_schemas is not None
+
+        await brain.stop()
+        await hands.stop()
+
+    @pytest.mark.asyncio
+    async def test_full_tool_call_flow_with_mock_llm(self, config):
+        """Full pipeline: user asks question → LLM calls tool → tool executes → LLM synthesizes."""
+        bus = MessageBus()
+        brain = BrainModule(bus, config)
+        hands = HandsModule(bus, config)
+
+        await brain.setup()
+        await hands.setup()
+
+        mock_llm = MockToolLLM()
+        brain.llm = mock_llm
+        brain._reasoner.llm = mock_llm
+
+        await brain.start()
+        await hands.start()
+
+        # Let scheduled event-loop tasks (like status.hands.ready handler) complete
+        await asyncio.sleep(0.01)
+
+        responses = []
+        bus.subscribe("response.text", lambda t, p: responses.append(p))
+
+        # Send a question that should trigger tool calling
+        bus.user_input("What day is it today?")
+
+        await asyncio.sleep(0.5)
+
+        await brain.stop()
+        await hands.stop()
+
+        # Verify response was produced
+        assert len(responses) > 0, "No response received"
+        text = responses[0].get("text", "")
+        assert len(text) > 0
+
+        # Verify tool was used
+        tools_used = responses[0].get("tools_used", [])
+        assert len(tools_used) > 0, f"No tools were used. Response: {text}"
+        assert any(t["name"] == "datetime" for t in tools_used), \
+            f"Expected datetime tool to be called, got: {tools_used}"
+
+        # LLM should have been called twice (first with tools, second for synthesis)
+        assert len(mock_llm.chat_calls) >= 2, \
+            f"Expected at least 2 LLM calls, got {len(mock_llm.chat_calls)}"
+
+    @pytest.mark.asyncio
+    async def test_tool_call_response_reflects_tool_result(self, config):
+        """The final response should be synthesized from tool results, not the first LLM response."""
+        bus = MessageBus()
+        brain = BrainModule(bus, config)
+        hands = HandsModule(bus, config)
+
+        await brain.setup()
+        await hands.setup()
+
+        mock_llm = MockToolLLM()
+        brain.llm = mock_llm
+        brain._reasoner.llm = mock_llm
+
+        await brain.start()
+        await hands.start()
+
+        # Let scheduled event-loop tasks (like status.hands.ready handler) complete
+        await asyncio.sleep(0.01)
+
+        responses = []
+        bus.subscribe("response.text", lambda t, p: responses.append(p))
+
+        bus.user_input("What day is it?")
+
+        await asyncio.sleep(0.5)
+
+        await brain.stop()
+        await hands.stop()
+
+        assert len(responses) > 0
+        text = responses[0].get("text", "")
+        # The mock's second response says "Monday, May 24, 2026" — this
+        # proves synthesis happened, not just echoing the first response
+        assert "Today is Monday" in text, \
+            f"Expected synthesized response, got: {text}"
+
+    @pytest.mark.asyncio
+    async def test_direct_answer_without_tools(self, config):
+        """When LLM doesn't return tool_calls, flow should work without tools."""
+        bus = MessageBus()
+        brain = BrainModule(bus, config)
+        hands = HandsModule(bus, config)
+
+        await brain.setup()
+        await hands.setup()
+
+        mock_llm = MockToolLLM()
+        brain.llm = mock_llm
+        brain._reasoner.llm = mock_llm
+        # Override first response to NOT have tool_calls
+        def no_tool_chat(messages, tools=None, **kwargs):
+            return {"content": "Hello! How can I help?", "tool_calls": None, "usage": {}}
+        mock_llm.chat = no_tool_chat
+
+        await brain.start()
+        await hands.start()
+
+        responses = []
+        bus.subscribe("response.text", lambda t, p: responses.append(p))
+
+        bus.user_input("Hi there")
+
+        await asyncio.sleep(0.5)
+
+        await brain.stop()
+        await hands.stop()
+
+        assert len(responses) > 0
+        assert responses[0].get("text") == "Hello! How can I help?"
+        assert responses[0].get("tools_used", []) == []

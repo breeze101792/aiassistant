@@ -12,14 +12,14 @@ pip install -r requirements.txt
 ollama pull qwen3:latest
 ollama pull qwen3-embedding:0.6b
 
-# Run tests
-./run.sh                       # runs pytest tests/ -v
-python -m pytest tests/ -v     # without run.sh
-
 # Start the assistant
-python main.py                 # chat mode, type your messages
-python main.py -v              # debug logging
-python main.py --help          # full options
+./run.sh                              # text chat mode
+./run.sh python main.py --audio       # audio chat mode (mic + TTS)
+./run.sh python main.py -v            # debug logging
+./run.sh python main.py --help        # full options
+
+# Run tests
+./run.sh python -m pytest tests/ -v
 ```
 
 ## CLI Commands
@@ -31,7 +31,7 @@ When the assistant is running:
 | `/exit` | Quit the assistant |
 | `/help` | Show available commands |
 | `/status` | Show module status and health |
-| `/verbose` | Toggle verbose mode (show thinking) |
+| `/log [level]` | Show or set log level (debug/info/warning/error/off) |
 | `/clear` | Clear the terminal |
 
 ## Architecture
@@ -99,10 +99,10 @@ Skills in `modules/hands/skills/`:
 
 ## Memory
 
-- **Conversations** stored as markdown: `data/memory/conversations/YYYY-MM-DD.md`
-- **Facts** stored by category: `data/memory/facts/*.md`
-- **Knowledge base**: `data/memory/knowledge/*.md`
-- **Embeddings cache**: SQLite database at `data/embeddings.db` (rebuildable from markdown)
+- **Conversations** stored as markdown: `.config/aiassistant/memory/conversations/YYYY-MM-DD.md`
+- **Facts** stored by category: `.config/aiassistant/memory/facts/*.md`
+- **Knowledge base**: `.config/aiassistant/memory/knowledge/*.md`
+- **Embeddings cache**: SQLite database at `.config/aiassistant/embeddings.db` (rebuildable from markdown)
 
 ## Remote Modules
 
@@ -133,7 +133,7 @@ python main_remote.py --help  # full options
 ├── main.py        Entry point
 ├── main_remote.py Remote module launcher
 ├── config.yaml    Configuration
-├── run.sh         Venv wrapper + test runner
+├── run.sh         Venv wrapper (defaults to main.py)
 └── requirements.txt
 ```
 
@@ -150,34 +150,9 @@ python -m pytest tests/test_integration.py -v -s
 python -m pytest tests/ -v --ignore=tests/test_integration.py
 ```
 
-## Lab — Audio Pipeline Testing
+## Audio Chat
 
-Scripts in `lab/` test hardware components independently so you can isolate failures:
+To use voice input, set `ears.backend: halasr` and `mouth.backend: edge_tts` in `config.yaml`.
+The assistant records from the default microphone and transcribes with FunASR.
 
-```bash
-# Test microphone capture (no torch needed)
-./run.sh python lab/test_audio.py
-
-# Capture + VAD analysis (shows speech vs silence ratio)
-./run.sh python lab/test_audio.py --vad
-
-# Capture + playback (verify the mic sounds correct)
-./run.sh python lab/test_audio.py --playback
-
-# Full pipeline: capture + ASR transcription (needs torch)
-./run.sh python lab/test_audio.py --asr
-
-# Capture longer audio
-./run.sh python lab/test_audio.py --duration 5
-```
-
-**Audio pipeline stages:**
-
-| Stage | What it tests | Dependency |
-|-------|--------------|------------|
-| Mic capture | PyAudio can open the mic and record | `pyaudio` |
-| VAD | WebRTC distinguishes speech from silence | `webrtcvad` |
-| WAV save | Recorded audio is saved to `/tmp/lab_test_audio.wav` | — |
-| ASR | FunASR transcribes speech to text | `torch`, `funasr` |
-
-The assistant WAV is also saved at `/tmp/aiassistant_asr.wav` — play it back to verify what the mic captured during a live session.
+Recorded audio is saved at `/tmp/aiassistant_asr.wav` during live sessions — play it back to verify mic capture.

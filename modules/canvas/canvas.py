@@ -22,7 +22,7 @@ class CanvasModule(BaseModule):
     async def setup(self) -> bool:
         if self.backend_name == "file":
             from modules.canvas.backends.file import FileCanvas
-            output_dir = os.path.join("data", "canvas_output")
+            output_dir = os.path.join(".config", "aiassistant", "canvas_output")
             self._backend = FileCanvas(output_dir=output_dir)
         elif self.backend_name == "web":
             from modules.canvas.backends.web import WebCanvas
@@ -31,7 +31,7 @@ class CanvasModule(BaseModule):
         else:
             logger.warning(f"Unknown canvas backend: {self.backend_name}, using file")
             from modules.canvas.backends.file import FileCanvas
-            self._backend = FileCanvas(output_dir=os.path.join("data", "canvas_output"))
+            self._backend = FileCanvas(output_dir=os.path.join(".config", "aiassistant", "canvas_output"))
 
         logger.info(f"Canvas setup — backend={self.backend_name}")
         return True

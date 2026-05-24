@@ -18,7 +18,7 @@ class MouthModule(BaseModule):
         self.speed = mouth_cfg.get("speed", 1.0)
         self._backend = None
         self._queue: list[dict] = []
-        self._current: dict | None = None
+        self._processing = False
 
     async def setup(self) -> bool:
         if self.backend_name == "text":
@@ -61,23 +61,29 @@ class MouthModule(BaseModule):
                 self._backend.stop()
 
         self._queue.append({"text": text, "voice": voice, "speed": speed})
-        if len(self._queue) == 1:
+        if not self._processing:
             await self._process_queue()
 
     async def _process_queue(self):
         import asyncio
-        while self._queue:
-            item = self._queue[0]
-            self.bus.publish("status.mouth.started", {"text": item["text"], "timestamp": _now_iso()})
-            try:
-                result = self._backend.speak(item["text"], voice=item["voice"], speed=item["speed"])
-                if asyncio.iscoroutine(result):
-                    await result
-            except Exception as e:
-                logger.error(f"Mouth speak error: {e}")
-                self.bus.publish("status.mouth.error", {"error": str(e)})
-            self.bus.publish("status.mouth.done", {"text": item["text"], "timestamp": _now_iso(), "interrupted": False})
-            self._queue.pop(0)
+        self._processing = True
+        try:
+            while self._queue:
+                item = self._queue[0]
+                self.bus.publish("status.mouth.started", {"text": item["text"], "timestamp": _now_iso()})
+                try:
+                    result = self._backend.speak(item["text"], voice=item["voice"], speed=item["speed"])
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception as e:
+                    logger.error(f"Mouth speak error: {e}")
+                    self.bus.publish("status.mouth.error", {"error": str(e)})
+                self.bus.publish("status.mouth.done", {"text": item["text"], "timestamp": _now_iso(), "interrupted": False})
+                # Only pop if this item is still at the front (not replaced by interrupt)
+                if self._queue and self._queue[0] is item:
+                    self._queue.pop(0)
+        finally:
+            self._processing = False
 
 
 def _now_iso() -> str:

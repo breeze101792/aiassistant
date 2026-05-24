@@ -28,7 +28,7 @@ class Reflector:
         self._loop_count += 1
 
         if error:
-            if self._loop_count < self.max_loops:
+            if self._loop_count <= self.max_loops:
                 return ReflectDecision(
                     verdict=ReflectVerdict.RETRY,
                     summary=f"Tool failed: {error}. Will retry ({self._loop_count}/{self.max_loops})."

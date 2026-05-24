@@ -42,17 +42,17 @@ class BrainModule(BaseModule):
 
         # Memory
         self.memory = MemoryManager(
-            conversations_path=mem_cfg.get("conversations_path", "./data/memory/conversations"),
-            facts_path=mem_cfg.get("facts_path", "./data/memory/facts"),
-            knowledge_path=mem_cfg.get("knowledge_path", "./data/memory/knowledge"),
-            embeddings_db_path=mem_cfg.get("embeddings_db", "./data/embeddings.db"),
+            conversations_path=mem_cfg.get("conversations_path", ".config/aiassistant/memory/conversations"),
+            facts_path=mem_cfg.get("facts_path", ".config/aiassistant/memory/facts"),
+            knowledge_path=mem_cfg.get("knowledge_path", ".config/aiassistant/memory/knowledge"),
+            embeddings_db_path=mem_cfg.get("embeddings_db", ".config/aiassistant/embeddings.db"),
         )
         self.context_max_tokens = mem_cfg.get("context_max_tokens", 4096)
         self.context_recent_messages = mem_cfg.get("context_recent_messages", 20)
 
         # Embeddings
         self.embeddings = EmbeddingsEngine(
-            db_path=mem_cfg.get("embeddings_db", "./data/embeddings.db"),
+            db_path=mem_cfg.get("embeddings_db", ".config/aiassistant/embeddings.db"),
         )
 
         # Tools
@@ -64,7 +64,7 @@ class BrainModule(BaseModule):
         self.planner = Planner()
         self.reflector = Reflector(max_loops=self.max_reflect_loops)
         self.responder = Responder(
-            conversations_path=mem_cfg.get("conversations_path", "./data/memory/conversations"),
+            conversations_path=mem_cfg.get("conversations_path", ".config/aiassistant/memory/conversations"),
             context_recent_messages=self.context_recent_messages,
         )
 
@@ -138,6 +138,9 @@ class BrainModule(BaseModule):
         # Register RPC endpoint
         self.bus.subscribe("brain.ask", self._handle_rpc_ask)
 
+        # Load tool schemas when Hands module is ready
+        self.bus.subscribe("status.hands.ready", self._handle_hands_ready)
+
         logger.info("Brain started — listening for input")
 
     async def stop(self) -> None:
@@ -190,6 +193,14 @@ class BrainModule(BaseModule):
             result = await self._quick_answer(question)
             self.bus.respond_rpc(request_id, result)
 
+    async def _handle_hands_ready(self, topic: str, payload: dict) -> None:
+        """Load tool schemas when Hands publishes ready."""
+        tools = payload.get("tools", [])
+        if tools:
+            self.tool_cache.load(tools)
+            self._reasoner.set_tools(self.tool_cache.get_formatted_schemas())
+            logger.info(f"Loaded {len(tools)} tools from Hands: {sorted(self.tool_cache.tool_names)}")
+
     # ── Thinking Loop ────────────────────────────────────────
 
     async def _thinking_loop(self, perceived: PerceivedInput, topic: str) -> None:
@@ -218,12 +229,10 @@ class BrainModule(BaseModule):
 
             # 3. REASON
             memory_context = self._assemble_memory_context(text)
-            tool_schemas = self.tool_cache.get_schemas() if self.tool_cache.tool_names else None
 
             llm_response = self._reasoner.reason(
                 user_message=text,
                 memory_context=memory_context,
-                tool_schemas=tool_schemas,
             )
 
             # Record user turn
@@ -237,16 +246,19 @@ class BrainModule(BaseModule):
                 pass
 
             # 4. PLAN
+            has_tools = bool(self.tool_cache.tool_names)
             plan = self.planner.decide(
                 intent_type=intent.type,
                 llm_response=llm_response,
-                has_tools=bool(self.tool_cache.tool_names),
+                has_tools=has_tools,
             )
 
             # 5. ACT (if needed)
             tools_used = []
+            tool_results_for_feedback = []
             if plan.action == "call_tool" and plan.tool_calls:
-                for tc in plan.tool_calls:
+                raw_tool_calls = llm_response.get("tool_calls") or []
+                for i, tc in enumerate(plan.tool_calls):
                     tool_result = await self._execute_tool(tc.name, tc.arguments or {})
                     tools_used.append({
                         "name": tc.name,
@@ -272,6 +284,20 @@ class BrainModule(BaseModule):
                         self._deliver_response(response, should_speak)
                         self._save_response(response, tools_used)
                         return
+
+                    # Collect for feedback loop
+                    raw_tc = raw_tool_calls[i] if i < len(raw_tool_calls) else {}
+                    tool_results_for_feedback.append({
+                        "call": raw_tc,
+                        "result": result_data,
+                    })
+
+                # Let LLM synthesize a response from tool results
+                if tool_results_for_feedback:
+                    calls = [t["call"] for t in tool_results_for_feedback]
+                    results = [{"result": t["result"]} for t in tool_results_for_feedback]
+                    synthesis = self._reasoner.reason_with_tool_results(calls, results)
+                    llm_response = synthesis
 
             # 7. RESPOND
             final_text = llm_response.get("content") or "I'm not sure how to respond to that."
@@ -346,6 +372,7 @@ class BrainModule(BaseModule):
             "text": response["text"],
             "conversation_id": response["conversation_id"],
             "thinking": response.get("thinking"),
+            "tools_used": response.get("tools_used", []),
         })
         # Only speak when input came from voice (ears)
         if should_speak:
@@ -370,5 +397,6 @@ class BrainModule(BaseModule):
 
     async def _quick_answer(self, question: str) -> dict:
         messages = [{"role": "user", "content": question}]
-        response = self.llm.chat(messages)
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, self.llm.chat, messages)
         return {"answer": response.get("content", ""), "thinking": None}

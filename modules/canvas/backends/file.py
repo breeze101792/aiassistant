@@ -8,7 +8,7 @@ from modules.canvas.backends.base import CanvasBackend
 class FileCanvas(CanvasBackend):
     """Outputs canvas content to files — headless mode."""
 
-    def __init__(self, output_dir: str = "./data/canvas_output"):
+    def __init__(self, output_dir: str = ".config/aiassistant/canvas_output"):
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
         self._elements: dict[str, dict] = {}

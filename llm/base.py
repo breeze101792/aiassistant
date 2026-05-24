@@ -55,8 +55,9 @@ class LLMBackend(ABC):
             enc = tiktoken.get_encoding("cl100k_base")
             total = 0
             for msg in messages:
-                total += len(enc.encode(msg.get("content", "")))
+                content = msg.get("content") or ""
+                total += len(enc.encode(content))
                 total += 4  # role + formatting overhead per message
             return total + 2  # priming tokens
         except ImportError:
-            return sum(len(m.get("content", "").split()) * 2 for m in messages)
+            return sum(len((m.get("content") or "").split()) * 2 for m in messages)

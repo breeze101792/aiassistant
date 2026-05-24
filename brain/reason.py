@@ -1,4 +1,22 @@
 from llm.base import LLMBackend
+import re
+
+
+def _strip_thinking(content: str) -> str:
+    """Remove thinking blocks from model output, keeping only the final response."""
+    if not content:
+        return content
+    # qwen3 / deepseek style: <response> marker separates thinking from answer
+    parts = re.split(r'\s*<response>\s*', content, maxsplit=1)
+    if len(parts) > 1:
+        text = parts[1].strip()
+        text = re.sub(r'\s*</response>\s*$', '', text)
+        return text
+    # If only a thinking block exists with no response marker, strip it entirely
+    if '<thinking>' in content:
+        cleaned = re.sub(r'^\s*<thinking>[\s\S]*', '', content, count=1)
+        return cleaned.strip()
+    return content.strip()
 
 
 class Reasoner:
@@ -16,9 +34,16 @@ class Reasoner:
         self.compress_target = compress_target
         self.context_max_tokens = context_max_tokens
         self._history: list[dict] = []
+        self._compressed_summary: str | None = None
+        self._tool_schemas: list[dict] | None = None
 
     def reset(self):
         self._history = []
+        self._compressed_summary = None
+
+    def set_tools(self, formatted_schemas: list[dict] | None) -> None:
+        """Update available tool schemas (called when tools are loaded after startup)."""
+        self._tool_schemas = formatted_schemas
 
     def reason(
         self,
@@ -31,6 +56,12 @@ class Reasoner:
 
         messages = [{"role": "system", "content": self.persona}]
 
+        if self._compressed_summary:
+            messages.append({
+                "role": "system",
+                "content": f"Summary of earlier conversation:\n{self._compressed_summary}"
+            })
+
         if memory_context:
             messages.append({
                 "role": "system",
@@ -39,13 +70,51 @@ class Reasoner:
 
         messages.extend(self._history)
 
-        tools = None
-        if tool_schemas:
-            tools = [{"type": "function", "function": s} for s in tool_schemas]
+        tools = tool_schemas or self._tool_schemas
 
         response = self.llm.chat(messages, tools=tools)
 
-        content = response.get("content") or ""
+        raw_content = response.get("content") or ""
+        content = _strip_thinking(raw_content)
+        response["content"] = content
+        self._history.append({"role": "assistant", "content": content})
+
+        return response
+
+    def reason_with_tool_results(
+        self,
+        tool_calls: list[dict],
+        tool_results: list[dict],
+    ) -> dict:
+        """Second reasoning pass: send tool call + results back to LLM for synthesis."""
+        for tc, result in zip(tool_calls, tool_results):
+            self._history.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "function": {
+                        "name": tc.get("name", ""),
+                        "arguments": tc.get("arguments", {}),
+                    }
+                }],
+            })
+            result_data = result.get("result", "")
+            if not isinstance(result_data, str):
+                import json
+                result_data = json.dumps(result_data, ensure_ascii=False)
+            self._history.append({
+                "role": "tool",
+                "tool_call_id": tc.get("id", "unknown"),
+                "content": result_data,
+            })
+
+        messages = [{"role": "system", "content": self.persona}]
+        messages.extend(self._history)
+
+        response = self.llm.chat(messages)
+        raw_content = response.get("content") or ""
+        content = _strip_thinking(raw_content)
+        response["content"] = content
         self._history.append({"role": "assistant", "content": content})
 
         return response
@@ -76,8 +145,5 @@ class Reasoner:
         summary = self.llm.chat(compress_messages, max_tokens=self.compress_target)
         summary_text = summary.get("content", "") or "Previous conversation summarized."
 
-        self._history = [
-            {"role": "system",
-             "content": f"Summary of earlier conversation:\n{summary_text}"},
-            {"role": "assistant", "content": "Understood. I'll use this context going forward."},
-        ] + latest
+        self._compressed_summary = summary_text
+        self._history = latest

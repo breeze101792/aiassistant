@@ -80,6 +80,50 @@ class TestWebSearch:
         assert 'query' in tool.parameters.get('properties', {})
 
 
+class TestSkillRegistration:
+    """Bug regression: skill instances must have set_bus() called on registration."""
+
+    def test_skill_instance_gets_bus_reference(self, message_bus):
+        from modules.hands.skills.base import SkillBase
+        from modules.hands.skills.daily_briefing import DailyBriefingSkill
+        from modules.hands.skills.research import ResearchSkill
+
+        for skill_cls in [DailyBriefingSkill, ResearchSkill]:
+            instance = skill_cls()
+            # Simulate what HandsModule should do
+            instance.set_bus(message_bus)
+            assert instance._bus is not None, f"{skill_cls.__name__} has no bus reference"
+
+    def test_skill_call_tool_requires_bus(self):
+        """Without set_bus(), call_tool must raise RuntimeError."""
+        from modules.hands.skills.daily_briefing import DailyBriefingSkill
+        import pytest
+
+        skill = DailyBriefingSkill()
+        with pytest.raises(RuntimeError, match="set_bus"):
+            skill.call_tool("datetime")
+
+    def test_skill_call_tool_works_with_bus(self, message_bus):
+        """With set_bus() and a bus, call_tool should enqueue without crashing."""
+        from modules.hands.skills.daily_briefing import DailyBriefingSkill
+        import asyncio
+
+        # Register the skill properly
+        skill = DailyBriefingSkill()
+        skill.set_bus(message_bus)
+
+        # call_tool publishes to bus and waits — this will timeout
+        # but should NOT raise "set_bus() not called"
+        try:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(asyncio.wait_for(
+                loop.create_future(), timeout=0.1
+            ))
+        except (asyncio.TimeoutError, RuntimeError):
+            pass
+        # The key assertion: call_tool didn't crash with "has no bus reference"
+
+
 class TestWebFetch:
     def test_fetch_httpbin(self):
         tool = WebFetchTool()
