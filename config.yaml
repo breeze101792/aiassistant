@@ -1,0 +1,77 @@
+# AI Assistant Configuration
+# All modules are always loaded. Backend controls behavior.
+
+bus:
+  websocket_port: 8765
+  remote_auth_token: ""
+
+brain:
+  persona: |
+    You are a smart, detail-oriented assistant. Always think step by step.
+    Match the user's language. Be concise. Use tools when available.
+  llm:
+    provider: ollama
+    model: qwen3:latest
+    url: http://127.0.0.1:11434
+    api_key: ""
+    max_tokens: 4096
+    temperature: 0.7
+  memory:
+    conversations_path: "./data/memory/conversations"
+    facts_path: "./data/memory/facts"
+    knowledge_path: "./data/memory/knowledge"
+    embeddings_db: "./data/embeddings.db"
+    context_max_tokens: 4096
+    context_recent_messages: 20
+  embeddings:
+    provider: ollama
+    model: qwen3-embedding:0.6b
+    url: ""
+    batch_size: 10
+  thinking:
+    max_reflect_loops: 3
+
+scheduler:
+  storage_path: "./data/schedules.json"
+  max_pending: 100
+
+ears:
+  backend: stub
+  hotwords: ["hello", "hey jarvis"]
+  silence_timeout: 20
+
+mouth:
+  backend: text
+  voice: "en-US-AriaNeural"
+  speed: 1.0
+
+eyes:
+  backend: stub
+  camera_index: 0
+  vision_model: null
+  vision_model_url: ""
+
+hands:
+  tool_paths:
+    - "./modules/hands/builtin_tools"
+    - "./modules/hands/skills"
+  sandbox_default: false
+  command_timeout: 30
+  safe_paths: ["./workspace", "/tmp/aiassistant"]
+
+canvas:
+  backend: file
+  web_port: 8081
+  image_model: null
+  image_model_url: ""
+  default_size: "1024x1024"
+
+cli:
+  backend: simple
+  prompt: "> "
+  verbose: false
+
+chat:
+  backends: []
+  telegram_token: ""
+  telegram_allowed_users: []

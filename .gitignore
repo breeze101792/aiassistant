@@ -170,3 +170,11 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 .pyvenv
+
+# Project-specific — runtime data
+data/
+!data/.gitkeep
+
+# Local config overrides (never commit)
+config.local.yaml
+*.local.*

@@ -1,68 +1,62 @@
+from abc import ABC, abstractmethod
+from typing import Any
 
-import traceback
-import tiktoken
 
-from utility.debug import *
+class LLMBackend(ABC):
+    """Abstract interface for LLM providers.
 
-class BaseService:
-    ServiceProvider = ''
-    def __init__(self, model = None, url = None, api_key = "", token_limit = 10000):
-        if model is not None:
-            self.server_url = url
-        else:
-            self.server_url = "http://127.0.0.1:8080/"
-        if model is not None:
-            self.model=model
-        else:
-            self.model = "deepseek-r1"
+    Every backend supports chat (with function-calling tools)
+    and embeddings (text -> vector).
+    """
 
+    def __init__(self, model: str, url: str = "", api_key: str = ""):
+        self.model = model
+        self.url = url
         self.api_key = api_key
 
-        self.token_limit = token_limit
-
-    def connect(self):
-        pass
-        # Checking status.
-        # self.check_status
-    def check_status(self):
-        try:
-            response = requests.get(self.server_url)
-            dbg_debug(f'Respone code from {self.server_url}:{response.status_code}')
-            return True
-        except:
-            return 500
-            return False
-    def get_token_limit(self):
-        return self.token_limit
-
-    def calculate_token_count(self, messages, model_name='gpt-4'):
-        """
-        Calculate the total token count for a list of messages using tiktoken.
-
-        Args:
-        - messages (list): List of dictionaries with 'role' and 'content'.
-        - model_name (str): The model name to select the correct tokenizer. Default is 'gpt-4'.
+    @abstractmethod
+    def chat(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 4096,
+    ) -> dict:
+        """Send a chat request. Returns OpenAI-compatible response dict.
 
         Returns:
-        - int: Total number of tokens in the messages.
+            {
+                "content": str | None,          # text response (None if tool call)
+                "tool_calls": [                 # present if LLM wants to call tools
+                    {"name": "web_search", "arguments": {"query": "..."}}
+                ] | None,
+                "usage": {"prompt_tokens": int, "completion_tokens": int},
+            }
         """
+        ...
+
+    @abstractmethod
+    def embed(self, text: str) -> list[float]:
+        """Convert a single text to an embedding vector."""
+        ...
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Convert multiple texts to embedding vectors.
+
+        Default implementation loops over embed(). Backends with batch
+        endpoints should override for efficiency.
+        """
+        return [self.embed(t) for t in texts]
+
+    def token_count(self, messages: list[dict]) -> int:
+        """Estimate token count for a list of messages using tiktoken."""
         try:
-            # Initialize tokenizer based on the selected model
-            encoding = tiktoken.encoding_for_model(model_name)
-
-            total_tokens = 0
-
-            # Loop through each message and calculate token count
-            for message in messages:
-                content = message.get("content", "")
-                tokens = encoding.encode(content)
-                total_tokens += len(tokens)
-
-            return total_tokens
-
-        except Exception as e:
-            dbg_error(e)
-
-            traceback_output = traceback.format_exc()
-            dbg_error(traceback_output)
-            return -1
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")
+            total = 0
+            for msg in messages:
+                total += len(enc.encode(msg.get("content", "")))
+                total += 4  # role + formatting overhead per message
+            return total + 2  # priming tokens
+        except ImportError:
+            return sum(len(m.get("content", "").split()) * 2 for m in messages)
