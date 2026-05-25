@@ -61,6 +61,46 @@ def _load_funasr_model():
         return None
 
 
+# Whisper support — module-level lazy load (mirrors FunASR pattern above)
+_WHISPER_MODEL = None
+_WHISPER_MODEL_LOADED = False
+
+
+def _load_whisper_model(model_name="base"):
+    """Lazy-load Whisper model. Returns the model or None on failure."""
+    global _WHISPER_MODEL, _WHISPER_MODEL_LOADED
+    if _WHISPER_MODEL_LOADED:
+        return _WHISPER_MODEL
+
+    try:
+        import whisper
+        _WHISPER_MODEL = whisper.load_model(model_name)
+        _WHISPER_MODEL_LOADED = True
+        logger.info(f"Whisper model loaded: {model_name}")
+        return _WHISPER_MODEL
+    except ImportError:
+        _WHISPER_MODEL_LOADED = True
+        logger.error("openai-whisper not installed. Run: pip install openai-whisper")
+        return None
+    except Exception as e:
+        _WHISPER_MODEL_LOADED = True
+        logger.error(f"Failed to load Whisper model: {e}")
+        return None
+
+
+def _whisper_recognize(wav_path: str) -> str:
+    """Transcribe a WAV file using Whisper. Returns transcribed text or empty string."""
+    model = _load_whisper_model()
+    if model is None:
+        return ""
+    try:
+        result = model.transcribe(wav_path)
+        return result.get("text", "").strip()
+    except Exception:
+        logger.error(traceback.format_exc())
+        return ""
+
+
 # Optional imports — fail gracefully if not installed
 try:
     import pyaudio
@@ -110,6 +150,8 @@ class HalASRBackend:
     def __init__(
         self,
         on_text=None,
+        on_recording_start=None,
+        on_recording_end=None,
         device_index=None,
         sample_rate=48000,
         target_rate=16000,
@@ -117,8 +159,12 @@ class HalASRBackend:
         silence_duration=1.0,
         speech_timeout=20.0,
         vad_mode=3,
+        recognizer=None,
+        recognizer_name=None,
     ):
         self.on_text = on_text
+        self.on_recording_start = on_recording_start
+        self.on_recording_end = on_recording_end
         self.sample_rate = sample_rate
         self.target_rate = target_rate
         self.hotwords = hotwords or []
@@ -127,6 +173,8 @@ class HalASRBackend:
         self.vad_mode = vad_mode
 
         self.chunk = int(sample_rate * 20 / 1000)  # 20ms frames
+        self._recognizer = recognizer
+        self._recognizer_name = recognizer_name
         self._running = False
         self._thread = None
         self._audio = None
@@ -180,12 +228,18 @@ class HalASRBackend:
     def _init_model(self):
         if self._model is not None:
             return
+        if self._recognizer is not None:
+            if self._recognizer_name == "whisper":
+                _load_whisper_model()
+            return
         self._model = _load_funasr_model()
         if self._model is not None:
             logger.info("FunASR model loaded")
 
     def _recognize(self, audio_data: bytes) -> str:
         self._init_model()
+        if self._recognizer is not None:
+            return self._recognizer(self._tmp_file)
         if self._model is None:
             return ""
         try:
@@ -225,10 +279,16 @@ class HalASRBackend:
             return
 
         # Check model availability early so the user knows immediately
-        try:
-            import torch
-        except ImportError:
-            logger.error("torch not installed — ASR will not transcribe. Run: pip install torch")
+        if self._recognizer_name == "whisper":
+            try:
+                import whisper  # noqa: F401
+            except ImportError:
+                logger.error("openai-whisper not installed — ASR will not transcribe. Run: pip install openai-whisper")
+        else:
+            try:
+                import torch  # noqa: F401
+            except ImportError:
+                logger.error("torch not installed — ASR will not transcribe. Run: pip install torch")
 
         # Preload ASR model so first transcription doesn't lag
         self._init_model()
@@ -307,6 +367,8 @@ class HalASRBackend:
                     if is_speech and not recording:
                         logger.debug("Voice detected, recording...")
                         recording = True
+                        if self.on_recording_start:
+                            self.on_recording_start()
 
                     if is_speech:
                         last_voice_time = time.time()
@@ -329,6 +391,9 @@ class HalASRBackend:
             if self._muted:
                 logger.debug("Muted — discarding segment")
                 continue
+
+            if self.on_recording_end:
+                self.on_recording_end()
 
             # Process the recorded segment
             try:

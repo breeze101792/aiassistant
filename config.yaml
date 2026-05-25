@@ -37,6 +37,7 @@ scheduler:
 
 ears:
   backend: stub
+  recognizer: whisper          # whisper | funasr (only used with backend: halasr)
   hotwords: ["hello", "hey jarvis"]
   silence_timeout: 20
 

@@ -30,6 +30,9 @@ class CLIModule(BaseModule):
     async def start(self) -> None:
         self._running = True
         self.bus.subscribe("response.text", self._handle_response)
+        self.bus.subscribe("status.ears.listening", self._handle_listening)
+        self.bus.subscribe("status.ears.processing", self._handle_processing)
+        self.bus.subscribe("status.ears.transcribed", self._handle_transcribed)
         self.bus.subscribe("status.ears.error", self._handle_error)
         self.bus.subscribe("status.mouth.error", self._handle_error)
         self.bus.subscribe("status.assistant.ready", self._handle_ready)
@@ -107,6 +110,17 @@ class CLIModule(BaseModule):
         if logging.root.level <= logging.DEBUG and thinking:
             print(f"  [thinking: {thinking}]")
         print(f"\n{self.prompt}", end="", flush=True)
+
+    async def _handle_listening(self, topic: str, payload: dict) -> None:
+        print(f"\r\x1b[K\033[33m● Listening...\033[0m", end="", flush=True)
+
+    async def _handle_processing(self, topic: str, payload: dict) -> None:
+        print(f"\r\x1b[K\033[36m● Processing...\033[0m", end="", flush=True)
+
+    async def _handle_transcribed(self, topic: str, payload: dict) -> None:
+        text = payload.get("text", "")
+        print(f"\r\x1b[K\033[32mYou: {text}\033[0m")
+        print(f"{self.prompt}", end="", flush=True)
 
     async def _handle_ready(self, topic: str, payload: dict) -> None:
         print("Ready. Type /help for commands.\n")

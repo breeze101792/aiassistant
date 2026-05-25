@@ -23,7 +23,7 @@ Config:
 
   Key config sections:
     brain      — persona, LLM provider/model, memory, embeddings
-    ears       — speech recognition backend (stub/funasr/whisper)
+    ears       — speech recognition backend (stub/funasr/whisper/halasr)
     mouth      — TTS backend (text/edge_tts)
     hands      — tool paths, sandbox, command timeout
     scheduler  — task scheduling, max pending
@@ -116,6 +116,9 @@ class AssistantRunner:
 
     async def start(self):
         logger.info("Starting AI Assistant...")
+
+        # Capture the event loop so daemon threads can schedule coroutines
+        self.bus._loop = asyncio.get_running_loop()
 
         # Start remote bus
         bus_cfg = self.config.get("bus", {})

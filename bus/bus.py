@@ -1,10 +1,13 @@
 import asyncio
+import logging
 import uuid
 from collections import defaultdict
 from typing import Any, Callable
 
 from bus.errors import NoSubscriberError, TimeoutError, ModuleNotFoundError
 from bus.registry import ModuleRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class MessageBus:
@@ -22,7 +25,10 @@ class MessageBus:
 
     def _get_loop(self) -> asyncio.AbstractEventLoop:
         if self._loop is None:
-            self._loop = asyncio.get_event_loop()
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                self._loop = asyncio.get_event_loop()
         return self._loop
 
     # ── Pub/Sub ─────────────────────────────────────────────
@@ -47,7 +53,7 @@ class MessageBus:
                         asyncio.run_coroutine_threadsafe(result, self._get_loop())
             except Exception:
                 # One misbehaving subscriber must not affect others
-                pass
+                logger.debug("Subscriber error on topic %s", topic, exc_info=True)
 
     def subscribe(self, topic: str, callback: Callable[[str, dict], None]) -> str:
         """Register a callback for a topic. Returns a subscription ID for unsubscribe."""

@@ -16,10 +16,10 @@ class EarsModule(BaseModule):
 
     def __init__(self, bus, config: dict):
         super().__init__(bus, config)
-        ears_cfg = config.get("ears", {})
-        self.backend_name = ears_cfg.get("backend", "stub")
-        self.hotwords = ears_cfg.get("hotwords", ["hey assistant"])
-        self.silence_timeout = ears_cfg.get("silence_timeout", 20)
+        self._ears_cfg = config.get("ears", {})
+        self.backend_name = self._ears_cfg.get("backend", "stub")
+        self.hotwords = self._ears_cfg.get("hotwords", ["hey assistant"])
+        self.silence_timeout = self._ears_cfg.get("silence_timeout", 20)
         self._backend = None
         self._state = "idle"  # idle | listening | paused
         self._state_lock = threading.Lock()
@@ -36,11 +36,20 @@ class EarsModule(BaseModule):
             self._backend = WhisperBackend()
         elif self.backend_name == "halasr":
             from modules.ears.asr_backends.halasr import HalASRBackend
+            recognizer_name = self._ears_cfg.get("recognizer", "whisper")
+            recognizer = None
+            if recognizer_name == "whisper":
+                from modules.ears.asr_backends.halasr import _whisper_recognize
+                recognizer = _whisper_recognize
             self._backend = HalASRBackend(
                 on_text=self._on_speech,
+                on_recording_start=self._on_recording_start,
+                on_recording_end=self._on_recording_end,
                 hotwords=self.hotwords,
                 silence_duration=1.0,
                 speech_timeout=self.silence_timeout,
+                recognizer=recognizer,
+                recognizer_name=recognizer_name if recognizer else None,
             )
         else:
             logger.warning(f"Unknown ears backend: {self.backend_name}, using stub")
@@ -79,18 +88,29 @@ class EarsModule(BaseModule):
         return {"status": "ok", "details": {"backend": self.backend_name, "state": self._state}}
 
     def _start_listening(self):
-        if hasattr(self._backend, "start"):
-            with self._state_lock:
-                self._state = "listening"
-            self._backend.start()
+        if not hasattr(self._backend, "start"):
+            logger.debug(f"Backend {self.backend_name} has no start() — skipping auto-listen")
+            return
+        with self._state_lock:
+            self._state = "listening"
+        self._backend.start()
 
     def _on_speech(self, text: str):
         """Callback from ASR backend — publish transcribed text to bus."""
+        self.bus.publish("status.ears.transcribed", {"text": text})
         self.bus.publish("user.input.text", {
             "text": text,
             "confidence": 0.95,
             "source": "ears",
         })
+
+    def _on_recording_start(self):
+        """Callback from ASR backend — VAD detected speech."""
+        self.bus.publish("status.ears.listening", {})
+
+    def _on_recording_end(self):
+        """Callback from ASR backend — silence detected, processing segment."""
+        self.bus.publish("status.ears.processing", {})
 
     async def _handle_start(self, topic: str, payload: dict) -> None:
         with self._state_lock:
