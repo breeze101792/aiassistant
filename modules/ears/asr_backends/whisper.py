@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import warnings
 import wave
 
 import numpy as np
@@ -30,6 +31,7 @@ class WhisperBackend(ASRBackend):
         if self._model is None:
             try:
                 import whisper
+                warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
                 self._model = whisper.load_model(self.model_name)
             except ImportError:
                 return {"text": "Whisper not installed", "confidence": 0.0, "language": "en"}

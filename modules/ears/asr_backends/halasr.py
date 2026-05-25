@@ -9,6 +9,7 @@ import queue
 import threading
 import time
 import traceback
+import warnings
 import wave
 
 import numpy as np
@@ -74,6 +75,7 @@ def _load_whisper_model(model_name="base"):
 
     try:
         import whisper
+        warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
         _WHISPER_MODEL = whisper.load_model(model_name)
         _WHISPER_MODEL_LOADED = True
         logger.info(f"Whisper model loaded: {model_name}")
