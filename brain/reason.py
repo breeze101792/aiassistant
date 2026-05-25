@@ -6,7 +6,11 @@ def _strip_thinking(content: str) -> str:
     """Remove thinking blocks from model output, keeping only the final response."""
     if not content:
         return content
-    # qwen3 / deepseek style: <response> marker separates thinking from answer
+    # qwen3 plain-text format: thinking ... response
+    parts = re.split(r'\n\s*response\s*\n', content, maxsplit=1)
+    if len(parts) > 1:
+        return parts[1].strip()
+    # qwen3 / deepseek XML format: <response> marker
     parts = re.split(r'\s*<response>\s*', content, maxsplit=1)
     if len(parts) > 1:
         text = parts[1].strip()

@@ -30,8 +30,9 @@ class TestTabCompletion:
         assert "/help" in results
         assert "/status" in results
         assert "/log" in results
+        assert "/thinking" in results
         assert "/clear" in results
-        assert len(results) == 5
+        assert len(results) == 6
 
     def test_complete_partial_command(self, cli, monkeypatch):
         monkeypatch.setattr("modules.cli.cli.readline.get_line_buffer", lambda: "/he")

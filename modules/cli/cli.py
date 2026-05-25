@@ -22,6 +22,7 @@ class CLIModule(BaseModule):
         cli_cfg = config.get("cli", {})
         self.prompt = cli_cfg.get("prompt", "> ")
         self._running = False
+        self._show_thinking = False
 
     async def setup(self) -> bool:
         logger.info("CLI setup complete")
@@ -88,6 +89,11 @@ class CLIModule(BaseModule):
                 elif line.startswith("/log"):
                     self._set_log_level(line)
                     continue
+                elif line == "/thinking":
+                    self._show_thinking = not self._show_thinking
+                    state = "ON" if self._show_thinking else "OFF"
+                    print(f"\r\x1b[KThinking display: {state}")
+                    continue
                 elif line == "/clear":
                     print("\033[2J\033[H", end="")
                     continue
@@ -107,8 +113,8 @@ class CLIModule(BaseModule):
         text = payload.get("text", "")
         thinking = payload.get("thinking")
         print(f"\r\x1b[KAssistant: {text}")
-        if logging.root.level <= logging.DEBUG and thinking:
-            print(f"  [thinking: {thinking}]")
+        if self._show_thinking and thinking:
+            print(f"\033[90m  [{thinking[:200]}]\033[0m")
         print(f"\n{self.prompt}", end="", flush=True)
 
     async def _handle_listening(self, topic: str, payload: dict) -> None:
@@ -150,7 +156,7 @@ class CLIModule(BaseModule):
         logging.root.setLevel(level)
         print(f"Log level: {arg.lower()}")
 
-    _commands = ["/exit", "/help", "/status", "/log", "/clear"]
+    _commands = ["/exit", "/help", "/status", "/log", "/thinking", "/clear"]
     _log_levels = ["debug", "info", "warning", "error", "off"]
 
     def _complete(self, text: str, state: int) -> str | None:
