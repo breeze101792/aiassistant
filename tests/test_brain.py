@@ -233,6 +233,38 @@ class TestStripThinking:
         assert _strip_thinking("") == ""
         assert _strip_thinking(None) is None
 
+    def test_qwen3_plain_text_markers(self):
+        """Real qwen3 format: space + 'thinking' on own line, then ' response' marker."""
+        from brain.reason import _strip_thinking
+
+        # Exact format from qwen3 via ollama
+        content = (
+            " thinking\n"
+            "Okay, the user said \"hi\". I should respond in a friendly way.\n"
+            " response\n"
+            "\n"
+            "Hello! How can I assist you today?"
+        )
+        result = _strip_thinking(content)
+        assert result == "Hello! How can I assist you today?"
+        assert "thinking" not in result
+        assert "Okay, the user" not in result
+
+    def test_qwen3_hybrid_format(self):
+        """qwen3 hybrid: <thinking> opening tag with plain 'response' separator."""
+        from brain.reason import _strip_thinking
+
+        content = (
+            "<thinking>\n"
+            "Let me think about this.\n"
+            " response\n"
+            "\n"
+            "Here is my answer."
+        )
+        result = _strip_thinking(content)
+        assert result == "Here is my answer."
+        assert "Let me think" not in result
+
     def test_reason_strips_thinking_from_response(self, mock_llm):
         from brain.reason import Reasoner
 
