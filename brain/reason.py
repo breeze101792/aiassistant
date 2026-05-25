@@ -1,11 +1,22 @@
+import logging
 from llm.base import LLMBackend
 import re
+
+logger = logging.getLogger(__name__)
 
 
 def _strip_thinking(content: str) -> str:
     """Remove thinking blocks from model output, keeping only the final response."""
     if not content:
         return content
+    # qwen3 hybrid format: <thinking> ... response (no </thinking> tag)
+    cleaned = re.sub(
+        r'^\s*<thinking>[\s\S]*?\n\s*response\s*',
+        '', content, count=1,
+    )
+    if cleaned != content:
+        logger.debug("Stripped qwen3 hybrid thinking block (%d → %d chars)", len(content), len(cleaned.strip()))
+        return cleaned.strip()
     # qwen3 plain-text: "thinking" and "response" as standalone words on their own lines
     cleaned = re.sub(
         r'(?m)^\s*thinking\s*$[\s\S]*?^\s*response\s*$',
