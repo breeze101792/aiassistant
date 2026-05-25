@@ -23,14 +23,19 @@ class RemoteBus:
     async def start(self) -> None:
         try:
             import websockets
+        except ImportError:
+            logger.warning("websockets not installed — remote connections disabled")
+            return
+
+        try:
             self._server = await websockets.serve(
-                self._handle_connection, "0.0.0.0", self.port
+                self._handle_connection, "0.0.0.0", self.port,
             )
             logger.info(f"Remote bus listening on ws://0.0.0.0:{self.port}")
-        except ImportError:
-            logger.warning("websockets package not installed — remote connections disabled")
-        except Exception as e:
-            logger.error(f"Failed to start remote bus: {e}")
+        except OSError:
+            logger.warning(
+                "Port %s in use — remote connections disabled", self.port,
+            )
 
     async def stop(self) -> None:
         if self._server:

@@ -6,18 +6,28 @@ def _strip_thinking(content: str) -> str:
     """Remove thinking blocks from model output, keeping only the final response."""
     if not content:
         return content
-    # qwen3 plain-text format: thinking ... response
-    parts = re.split(r'\n\s*response\s*\n', content, maxsplit=1)
-    if len(parts) > 1:
-        return parts[1].strip()
+    # qwen3 plain-text: "thinking" and "response" as standalone words on their own lines
+    cleaned = re.sub(
+        r'(?m)^\s*thinking\s*$[\s\S]*?^\s*response\s*$',
+        '', content, count=1,
+    )
+    if cleaned != content:
+        return cleaned.strip()
     # qwen3 / deepseek XML format: <response> marker
     parts = re.split(r'\s*<response>\s*', content, maxsplit=1)
     if len(parts) > 1:
         text = parts[1].strip()
         text = re.sub(r'\s*</response>\s*$', '', text)
         return text
-    # If only a thinking block exists with no response marker, strip it entirely
+    # If only a thinking block exists with no response marker
     if '<thinking>' in content:
+        # Try stripping <thinking>...</thinking> block, leaving any trailing content
+        cleaned = re.sub(
+            r'^\s*<thinking>[\s\S]*?</thinking>\s*', '', content, count=1,
+        )
+        if cleaned != content:
+            return cleaned.strip()
+        # No closing tag — strip everything (all thinking, no response)
         cleaned = re.sub(r'^\s*<thinking>[\s\S]*', '', content, count=1)
         return cleaned.strip()
     return content.strip()
