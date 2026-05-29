@@ -9,38 +9,65 @@ def _strip_thinking(content: str) -> str:
     """Remove thinking blocks from model output, keeping only the final response."""
     if not content:
         return content
-    # qwen3 hybrid format: <thinking> ... response (no </thinking> tag)
-    cleaned = re.sub(
-        r'^\s*<thinking>[\s\S]*?\n\s*response\s*',
-        '', content, count=1,
+
+    original = content
+
+    # Strategy: find the LAST response delimiter and take everything after it.
+    #
+    # Known qwen3/deepseek formats observed in the wild:
+    #   qwen3 (ollama):   "<think>\n...\n</think>\n\nactual response"
+    #   qwen3 1.7b:       "<thinking>\n...\n</thinking>\n\nactual response"
+    #   qwen3 plain-text: " thinking\n...\n response\n\nactual response"
+    #   deepseek XML:     "<thinking>...</thinking>\n<response>actual</response>"
+    #
+    # The delimiter is a line containing a closing think tag (</think> or </thinking>),
+    # a <response> tag, or the plain-text word "response".
+
+    # 1. Find the LAST delimiter line and take everything after it
+    delimiter = (
+        r'^[ \t]*'
+        r'(?:'
+        r'</think>'            # qwen3 closing think tag (no "ing")
+        r'|</thinking>'        # qwen3 closing thinking tag
+        r'|<response>'         # deepseek XML response tag
+        r'|response'           # plain text response marker
+        r')'
+        r'[ \t]*$'
     )
-    if cleaned != content:
-        logger.debug("Stripped qwen3 hybrid thinking block (%d → %d chars)", len(content), len(cleaned.strip()))
-        return cleaned.strip()
-    # qwen3 plain-text: "thinking" and "response" as standalone words on their own lines
-    cleaned = re.sub(
-        r'(?m)^\s*thinking\s*$[\s\S]*?^\s*response\s*$',
-        '', content, count=1,
-    )
-    if cleaned != content:
-        return cleaned.strip()
-    # qwen3 / deepseek XML format: <response> marker
-    parts = re.split(r'\s*<response>\s*', content, maxsplit=1)
-    if len(parts) > 1:
+    last_end = None
+    for m in re.finditer(delimiter, content, flags=re.MULTILINE):
+        last_end = m.end()
+    if last_end is not None:
+        after = content[last_end:].strip()
+        if after:
+            after = re.sub(r'\s*</response>\s*$', '', after)
+            logger.debug("Stripped thinking via delimiter line (%d → %d chars)",
+                         len(original), len(after))
+            return after
+
+    # 2. split on <response> tag (not necessarily on its own line)
+    if '<response>' in content:
+        parts = content.split('<response>', 1)
         text = parts[1].strip()
         text = re.sub(r'\s*</response>\s*$', '', text)
-        return text
-    # If only a thinking block exists with no response marker
+        if text:
+            logger.debug("Stripped thinking via <response> split (%d → %d chars)",
+                         len(original), len(text))
+            return text
+
+    # 3. no response marker — try to strip thinking-only blocks
     if '<thinking>' in content:
-        # Try stripping <thinking>...</thinking> block, leaving any trailing content
-        cleaned = re.sub(
-            r'^\s*<thinking>[\s\S]*?</thinking>\s*', '', content, count=1,
-        )
+        cleaned = re.sub(r'^\s*<thinking>[\s\S]*?</thinking>\s*', '', content, count=1)
         if cleaned != content:
+            logger.debug("Stripped <thinking>...</thinking> block (%d → %d chars)",
+                         len(original), len(cleaned.strip()))
             return cleaned.strip()
-        # No closing tag — strip everything (all thinking, no response)
         cleaned = re.sub(r'^\s*<thinking>[\s\S]*', '', content, count=1)
+        logger.debug("Stripped <thinking> (no closing tag) (%d → %d chars)",
+                     len(original), len(cleaned.strip()))
         return cleaned.strip()
+
+    logger.debug("No thinking pattern found in content (%d chars), returning as-is", len(original))
     return content.strip()
 
 
@@ -100,6 +127,8 @@ class Reasoner:
         response = self.llm.chat(messages, tools=tools)
 
         raw_content = response.get("content") or ""
+        if raw_content:
+            logger.debug("reason raw_content (%d chars): %s", len(raw_content), repr(raw_content[:200]))
         content = _strip_thinking(raw_content)
         response["content"] = content
         self._history.append({"role": "assistant", "content": content})
@@ -138,6 +167,8 @@ class Reasoner:
 
         response = self.llm.chat(messages)
         raw_content = response.get("content") or ""
+        if raw_content:
+            logger.debug("reason_with_tool_results raw_content (%d chars): %s", len(raw_content), repr(raw_content[:200]))
         content = _strip_thinking(raw_content)
         response["content"] = content
         self._history.append({"role": "assistant", "content": content})
