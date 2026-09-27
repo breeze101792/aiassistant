@@ -227,8 +227,8 @@ Esc dismiss  ^T mute  ^L clear  ^D quit  F1 help                          pinned
 --------------------------------------------------------------------------------
 You       What is the weather?                                          10:21:10
   (harness unhealthy: backend-down overlay on a base state)                     
-!Error    [harness] pi did not respond                                  10:21:12
-          hint: check pi, then retry (Esc dismisses)                            
+!Error    [harness] the harness did not respond                         10:21:12
+          hint: check the provider, then retry (Esc dismisses)                  
                                                                                 
                                                                                 
                                                                                 

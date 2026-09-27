@@ -26,8 +26,8 @@ The names describe a metaphor rather than a function. The cost is concrete:
 - `ears` and `mouth` hid that they were one duplex device, which allowed two
   owners and produced the mute race.
 - `hands` does not say "tool registry and executor".
-- `llm/` does not say "model provider", which is exactly why pi was initially
-  mistaken for a provider.
+- `llm/` does not say "model provider", which is why the provider and the loop
+  owner were initially confused for one thing.
 
 Functional names state the responsibility.
 

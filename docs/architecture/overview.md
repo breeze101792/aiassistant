@@ -7,8 +7,8 @@ direction, and the modularization decision.
 
 A single Python process hosts an in-process pub/sub bus and a fixed set of
 modules. The native orb runs as a **separate process** and connects over a local
-WebSocket. When the `pi` harness is selected, pi runs as a **child process**
-speaking JSONL over stdin/stdout.
+WebSocket. One harness ships (`native`); the harness seam is open so a future
+harness could run as a child process.
 
 ```mermaid
 graph TD
@@ -16,10 +16,8 @@ graph TD
         MAIN[main.py] --> BUS[bus/<br/>MessageBus + topics.py]
         BUS --> BRIDGE_SRV[bus/remote.py<br/>WS server :8765 loopback]
         AGENT[agent/<br/>loop, gate, memory, policy] -->|bus topics| BUS
-        AGENT --> HARNESS[agent/harness/<br/>native | pi]
+        AGENT --> HARNESS[agent/harness/<br/>native]
         HARNESS --> REASON[reasoning/<br/>ollama, openai]
-        HARNESS -.->|spawn JSONL| PI[pi --mode rpc<br/>child process]
-        PI -.->|its own tools| FS[workspace files]
         VOICE[voice/<br/>asr, tts, audio, wake] -->|bus topics| BUS
         TOOLS[tools/] --> BUS
         VISION[vision/] --> BUS
@@ -48,7 +46,7 @@ modules/base.py, bridge/
   ↑
 reasoning/ (provider abstraction)
   ↑
-agent/harness/ (native uses reasoning/; pi uses subprocess)
+agent/harness/ (native uses reasoning/)
   ↑
 agent/ (loop, policy, memory) → tools/, scheduler/, voice/, vision/, messaging/, console/
   ↑
@@ -72,7 +70,7 @@ duplication or ownership conflict** — not tidiness.
 | Module | Trigger that justifies it |
 | --- | --- |
 | `bus` | Already exists and works; a real seam for remote modules, stub mode, and tests. Replacing it buys nothing. |
-| `agent/harness` | Two real implementations must be interchangeable at config time. This is the core requirement. |
+| `agent/harness` | The loop owner must be swappable at config time; one implementation ships and the seam stays open for a future one (REQ-HARNESS-008). |
 | `reasoning` | Multiple providers behind one streaming interface, and it must be testable without a network. |
 | `voice` | One owner is required for the duplex audio device. Two owners produced two real bugs. |
 | `tools` | Tools are dynamically discovered; the registry must be testable without the agent. |
@@ -96,13 +94,13 @@ Two kinds, and the distinction matters:
 | Kind | Location | Test |
 | --- | --- | --- |
 | **Module boundary** (internal) | `architecture/modules/` | Can we change both sides at once? Yes, both are our code. |
-| **Contract** (external) | `contracts/` | The other side is not ours — pi, Qt, the OS audio stack. |
+| **Contract** (external) | `contracts/` | The other side is not ours — Qt, the OS audio stack, a future out-of-process harness. |
 
 Applied here:
 
-- **pi's RPC wire format** is a contract (`contracts/protocols.md`), because the
-  other side is upstream pi. Our adapter's structure is a module boundary
-  (`architecture/modules/pi-harness.md`).
+- **The orb's WebSocket protocol** is a contract (`contracts/protocols.md`),
+  because the other side is a separate process. The orb module's structure is a
+  module boundary (`architecture/modules/orb.md`).
 - **Bus topics** are a contract between modules we own, but they are also the
   interface the orb subscribes to. The topic set is documented once in
   `contracts/protocols.md`.

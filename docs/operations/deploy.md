@@ -36,7 +36,6 @@ commercial license.
 - [ ] `docs/` updated to as-built for anything that changed.
 - [ ] `testing/trace.md` still shows every REQ covered or explicitly unverified.
 - [ ] No secret in the checked-in `config.yaml` (REQ-CFG-005).
-- [ ] The pinned pi version in `repos.md` matches `scripts/setup_pi.sh`.
 - [ ] Version bumped in one place.
 
 ## Versioning
@@ -49,7 +48,7 @@ out-of-process clients (the orb) depend on them.
 ## Rollback
 
 The state that matters is user data: markdown memory, `embeddings.db` (a
-rebuildable cache), `schedules.json`, and the pi workspace. All live under
-`.config/aiassistant/` or the configured paths, so a rollback is a code
-downgrade plus, if needed, restoring that directory. The embeddings cache can be
-deleted and rebuilt at any time.
+rebuildable cache), and `schedules.json`. All live under `.config/aiassistant/`
+or the configured paths, so a rollback is a code downgrade plus, if needed,
+restoring that directory. The embeddings cache can be deleted and rebuilt at any
+time.

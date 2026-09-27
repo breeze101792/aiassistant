@@ -20,8 +20,8 @@ class TestStateAndHarness:
 
     def test_harness_badge(self):
         m = OrbViewModel()
-        m.on_harness({"harness": "pi", "model": "qwen3:latest"})
-        assert m.harness == "pi"
+        m.on_harness({"harness": "native", "model": "qwen3:latest"})
+        assert m.harness == "native"
         assert m.model == "qwen3:latest"
 
     def test_error_sets_state_and_message(self):
@@ -174,8 +174,8 @@ class TestFeedDispatch:
         assert m.transcript[-1]["text"] == "hi"
         feed(m, topics.AGENT_FINAL, {"text": "hi"})
         assert m.state == "idle"
-        feed(m, topics.STATUS_HARNESS, {"harness": "pi", "model": "m"})
-        assert m.harness == "pi"
+        feed(m, topics.STATUS_HARNESS, {"harness": "native", "model": "m"})
+        assert m.harness == "native"
         feed(m, topics.AGENT_TURN_ERROR, {"message": "boom"})
         assert m.state == "error"
 

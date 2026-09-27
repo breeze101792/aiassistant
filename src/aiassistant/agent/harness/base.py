@@ -1,10 +1,13 @@
 """The agent harness contract.
 
-A harness owns *how a turn is reasoned*. Two implementations exist:
+A harness owns *how a turn is reasoned*. One implementation ships today:
 
 * ``NativeHarness`` — our loop: we prompt a model provider and run our tools.
-* ``PiHarness`` — the external pi coding agent, which owns its own loop, tools,
-  and context (see the pi adapter).
+
+The interface is deliberately open. A harness may own its tools and its memory
+rather than delegate both, so :class:`HarnessCaps` reports the difference and
+the rest of the system never assumes it. Adding a second loop means implementing
+this contract and registering it in the factory; nothing downstream changes.
 
 Everything downstream of a turn — the transcript, the orb, the TTS chunker —
 consumes the single :class:`TurnEvent` vocabulary declared here and never
@@ -59,9 +62,9 @@ class TurnEvent:
 class HarnessCaps:
     """What a harness can do. Reported, never silently assumed.
 
-    The two harnesses are genuinely not equivalent: pi owns its tools and its
-    memory, our native loop delegates both. Reporting the difference is what
-    keeps a swap honest (REQ-HARNESS-005).
+    Harnesses are not necessarily equivalent: one may own its tools and memory
+    while another delegates both. Reporting the difference is what keeps a swap
+    honest (REQ-HARNESS-005).
     """
 
     owns_tools: bool = False
@@ -104,9 +107,25 @@ class HarnessError(Exception):
 
 
 class AgentHarness(ABC):
-    """One implementation per way of running a turn."""
+    """One implementation per way of running a turn.
+
+    Beyond the abstract members, a harness may declare two optional members that
+    callers rely on. They have working defaults, so a minimal implementation
+    ignores them:
+
+    * :attr:`provider` — the model provider this harness drives, when it has
+      one. Callers that need a provider (embeddings) read it here rather than
+      probing the implementation. ``None`` means the harness has no provider to
+      offer.
+    * :meth:`ensure_started` — start external resources before the first turn. A
+      process-backed harness overrides it to spawn; the default does nothing.
+    """
 
     name = "harness"
+
+    # The provider this harness drives, or None. Not abstract: a harness that
+    # owns its provider (or needs none) leaves it None.
+    provider: Any = None
 
     @property
     @abstractmethod
@@ -136,6 +155,13 @@ class AgentHarness(ABC):
     async def health(self) -> HarnessHealth:
         """Report whether a turn can be served. Never raises."""
         raise NotImplementedError
+
+    async def ensure_started(self) -> None:
+        """Start any external resource the harness needs. Default: nothing.
+
+        Called once during setup, before the first health probe. A harness that
+        spawns a process overrides this and raises if it cannot start.
+        """
 
     async def close(self) -> None:
         """Release resources. Default: cancel and do nothing else."""

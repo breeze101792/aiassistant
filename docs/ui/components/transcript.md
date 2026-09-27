@@ -116,8 +116,8 @@ acceptable.
 
 `tool_call` / `tool_result` from the harness event vocabulary
 ([IF-0002](../../contracts/protocols.md#if-0002-agent-harness-event-contract)) arrive
-as `agent.delta` activity. With the native harness our tools execute; with `pi`
-the host only observes ([flows (f)](../../requirements/flows.md#f-tool-use)).
+as `agent.delta` activity. With `native`, our `tools/` executes and the host
+observes the result ([flows (f)](../../requirements/flows.md#f-tool-use)).
 
 | Field | Presentation |
 | --- | --- |

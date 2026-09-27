@@ -58,7 +58,7 @@ The ordered cancel sequence — order matters:
 | --- | --- | --- |
 | 1 | `agent` | Receives `command.agent.interrupt`. |
 | 2 | `agent` | Cancels the **retained** turn task. |
-| 3 | `agent` | Calls `harness.cancel()` — pi: `clear_queue` then `abort`; native: cancel the provider stream. |
+| 3 | `agent` | Calls `harness.cancel()` — native: cancel the provider stream. |
 | 4 | `voice` | Stops playback; sets the stop flag so the audio callback drains silence. |
 | 5 | `voice` | Clears the TTS queue; unmutes the mic. |
 | 6 | `agent` | Ends the turn with `turn_done(cancelled=true)`; no `agent.final`. |
@@ -103,29 +103,29 @@ The ordered cancel sequence — order matters:
 | Condition | Behavior | Recovery |
 | --- | --- | --- |
 | Target harness unavailable | Keeps the current harness; error shown | Fix config, retry |
-| pi binary missing | Actionable install message | Run `scripts/setup_pi.sh`, or pick native |
-| pi model invalid | Startup error from pi; previous harness retained | Set a valid model in pi's config |
-| pi exits unexpectedly | Backend-down state; bounded restart | Switch harness or restart |
+| Harness unhealthy mid-session | Backend-down state; error shown on the next turn | Switch harness or restart |
 
-**Note:** there is no automatic fallback between harnesses. They differ in tool
-ownership, so a silent switch would silently change what the assistant can do
-(REQ-HARNESS-006).
+**Note:** one harness ships (`native`), but the switch flow is kept because the
+seam stays open (REQ-HARNESS-008). There is no automatic fallback between
+harnesses: they can differ in tool ownership, so a silent switch would silently
+change what the assistant can do (REQ-HARNESS-006).
 
 ## (f) Tool use
 
-**Trigger:** the native harness decides a tool is needed, or pi calls its own.
+**Trigger:** the native harness decides a tool is needed.
 **Requirements:** REQ-TOOL-001..005, REQ-HARNESS-005.
 
 | # | Actor | Action |
 | --- | --- | --- |
 | 1 | harness | Emits a tool call; orb marks activity in the transcript. |
-| 2 | `tools` (native only) | Validates the call; applies sandbox policy. |
-| 3 | `tools` (native only) | Executes within `tools.timeout_s`; returns result or error. |
+| 2 | `tools` | Validates the call; applies sandbox policy. |
+| 3 | `tools` | Executes within `tools.timeout_s`; returns result or error. |
 | 4 | `agent` | Policy decides: proceed, retry, or abort. |
 | 5 | `agent` | Synthesizes the final response from the tool result. |
 
-With `harness: pi`, steps 2–3 happen **inside pi**; the host only observes
-`tool_result` events for display. Our tools are not consulted for that turn.
+`native` delegates tool execution to `tools/` (`caps.owns_tools` is false). A
+future harness could own its tools; then steps 2–3 would happen inside it and
+`tools/` would not be consulted for that turn (REQ-HARNESS-005).
 
 | Condition | Behavior | Recovery |
 | --- | --- | --- |
@@ -137,11 +137,11 @@ With `harness: pi`, steps 2–3 happen **inside pi**; the host only observes
 ## (g) Harness unavailable / model down
 
 **Trigger:** health probe fails, or a request errors or times out.
-**Requirements:** REQ-HARNESS-004, 006, 007, REQ-ERR-001..003.
+**Requirements:** REQ-HARNESS-006, 007, REQ-ERR-001..003.
 
 | # | Actor | Action |
 | --- | --- | --- |
-| 1 | `agent` | Classifies: connection, auth, model-missing, process-dead. |
+| 1 | `agent` | Classifies: connection, auth, model-missing, harness-dead. |
 | 2 | `agent` | Retries transient failures up to `conversation.retry_max`. |
 | 3 | orb | Shows backend-down with a recovery hint. |
 | 4 | `agent` | The turn terminates with a visible error. |
@@ -150,7 +150,7 @@ With `harness: pi`, steps 2–3 happen **inside pi**; the host only observes
 | --- | --- | --- |
 | Local model not pulled | Message names the model and the pull command | Pull it |
 | Provider auth failure | Message names the missing credential | Set the env var |
-| pi process dead | Bounded restart (backoff), then fail fast | Switch harness |
+| Harness unhealthy | Backend-down state; error shown on the next turn | Switch harness or restart |
 | Persistent failure | Stays degraded; setup path available | Flow (i) |
 
 ## (h) Mic or speaker unavailable
@@ -185,7 +185,7 @@ With `harness: pi`, steps 2–3 happen **inside pi**; the host only observes
 
 | Condition | Behavior | Recovery |
 | --- | --- | --- |
-| pi not installed | Offer `scripts/setup_pi.sh`; suggest native | Install or switch |
+| Harness unavailable | Offer the setup instructions; suggest the shipped harness | Configure or switch |
 | Model not pulled | Offer the pull command | Pull |
 | No GUI | Console mode | Install GUI deps |
 | Nothing available | Limited mode with setup visible | Complete setup |

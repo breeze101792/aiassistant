@@ -240,3 +240,87 @@ class TestStartupGrace:
 
         spawned = asyncio.run(scenario())
         assert spawned == [], "a quick crash must not trigger a respawn"
+
+
+class TestHarnessSeam:
+    """The harness abstraction is kept deliberately (REQ-HARNESS-008).
+
+    One harness ships, but the factory seam stays open: a new harness is added
+    by implementing the contract and registering it, with no caller changes.
+    """
+
+    def test_native_is_the_only_shipped_harness(self):
+        from aiassistant.agent.harness.factory import NATIVE, SUPPORTED
+        assert NATIVE == "native"
+        assert SUPPORTED == (NATIVE,)
+
+    def test_native_is_available(self):
+        from aiassistant.agent.harness.factory import harness_is_available
+        assert harness_is_available("native") is True
+
+    def test_removed_harness_is_not_available(self):
+        from aiassistant.agent.harness.factory import harness_is_available
+        assert harness_is_available("pi") is False
+
+    def test_unknown_harness_is_rejected_loudly(self):
+        from aiassistant.agent.harness.factory import (
+            HarnessConfigError, create_harness,
+        )
+        import pytest as _pytest
+        with _pytest.raises(HarnessConfigError, match="future-loop"):
+            create_harness({"harness": "future-loop"})
+
+    def test_harness_config_has_no_pi_key(self):
+        from aiassistant.config import DEFAULTS
+        assert "pi" not in DEFAULTS["agent"]
+
+    def test_the_contract_is_still_abstract(self):
+        """A future harness must be able to implement this without edits."""
+        from aiassistant.agent.harness.base import AgentHarness
+        assert hasattr(AgentHarness, "run_turn")
+        assert hasattr(AgentHarness, "cancel")
+        assert hasattr(AgentHarness, "health")
+
+
+class TestHarnessContractSurface:
+    """Every member a caller touches is on the contract, not duck-typed.
+
+    The three leaks fixed here were `hasattr(harness, "tool_schemas")`,
+    `getattr(harness, "provider", None)`, and a `getattr(harness,
+    "ensure_started", None)` probe. A new harness now only implements the
+    documented members.
+    """
+
+    def test_optional_members_have_defaults_on_the_abc(self):
+        from aiassistant.agent.harness.base import AgentHarness
+        # provider is a class-level default; ensure_started/close are methods.
+        assert AgentHarness.provider is None
+        assert callable(AgentHarness.ensure_started)
+        assert callable(AgentHarness.close)
+
+    def test_a_minimal_harness_needs_no_extra_members(self):
+        """FakeHarness implements only the abstract four, and still works."""
+        import asyncio
+        from aiassistant.agent.harness.fake import FakeHarness
+
+        h = FakeHarness()
+        assert h.provider is None
+        asyncio.run(h.ensure_started())   # default no-op
+        asyncio.run(h.close())            # default: cancels
+
+    def test_native_declares_its_provider(self):
+        from aiassistant.agent.harness.native import NativeHarness
+        from tests.test_integration import MockToolLLM
+
+        h = NativeHarness(MockToolLLM(), persona="t")
+        assert h.provider is not None
+        assert h.provider.model == "mock"
+
+    def test_no_caller_probes_the_harness_with_getattr(self):
+        """A guard against reintroducing the duck-typing."""
+        import pathlib
+        source = pathlib.Path(
+            "src/aiassistant/agent/module.py").read_text()
+        assert "getattr(self.harness" not in source
+        assert "hasattr(harness" not in source
+        assert "hasattr(self.harness" not in source

@@ -299,7 +299,9 @@ class TestToolCallingWithMockLLM:
         # After Hands starts, Brain should have loaded tools
         assert len(brain.tool_cache.tool_names) > 0
         assert "datetime" in brain.tool_cache.tool_names
-        assert brain.harness.tool_schemas is not None
+        # Schemas travel in TurnRequest each turn rather than being pushed into
+        # the harness, so the cache is the source of truth a turn reads.
+        assert brain.tool_cache.get_formatted_schemas()
 
         await brain.stop()
         await hands.stop()

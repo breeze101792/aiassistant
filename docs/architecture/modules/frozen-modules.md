@@ -26,8 +26,7 @@ accountable and so nobody assumes they are dead.
 | Verification | Backend selection and the stub path (T-1101) |
 
 **Deliberately unchanged:** the vision frame path base64-encodes images onto the
-bus. pi's `prompt.images` field can accept images, but wiring vision into pi
-turns is out of MVP scope.
+bus. Wiring vision into agent turns is out of MVP scope.
 
 ## `messaging` (was `chat`)
 
@@ -48,9 +47,9 @@ turns is out of MVP scope.
 | Verification | Ingest and delivery with a fake backend (T-1102) |
 
 **Security note:** a message from an external platform is **untrusted input**.
-If a harness with shell tools is reachable from this channel, that is a remote
-execution path. `messaging` is not in `pi.allow_channels` by default
-(REQ-SEC-003, [threat model](../../security/threat-model.md)).
+It reaches the agent as a `user.input.text` prompt and can invoke whatever tools
+the sandbox allows. `messaging` is disabled by default
+([threat model](../../security/threat-model.md)).
 
 ## What replaced `display` (was `canvas`)
 

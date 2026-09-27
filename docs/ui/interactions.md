@@ -123,7 +123,7 @@ below.
 | **0** | **orb** | **Publishes `command.agent.interrupt {}`** |
 | 1 | `agent` | Receives the command |
 | 2 | `agent` | Cancels the retained turn task |
-| 3 | `agent` | Calls `harness.cancel()` — pi: `clear_queue` then `abort`; native: cancel the provider stream |
+| 3 | `agent` | Calls `harness.cancel()` — native: cancel the provider stream |
 | 4 | `voice` | Stops playback; sets the stop flag |
 | 5 | `voice` | Clears the TTS queue; unmutes the mic |
 | 6 | `agent` | Ends the turn with `turn_done(cancelled=true)`; **no** `agent.final` |

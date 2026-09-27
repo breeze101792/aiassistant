@@ -4,8 +4,7 @@ Entities, fields, storage, and lifetime. Every number carries units or a source.
 
 ## Storage layout
 
-All paths come from config. Defaults shown. The pi workspace is anchored to
-`$HOME`; the rest are relative, except pi's own `~/.pi/agent/`.
+All paths come from config. Defaults shown; the rest are relative.
 
 | Store | Default path | Format | Lifetime |
 | --- | --- | --- | --- |
@@ -16,8 +15,6 @@ All paths come from config. Defaults shown. The pi workspace is anchored to
 | Schedules | `.config/aiassistant/schedules.json` | JSON | Until fired or deleted |
 | Console history | `.config/aiassistant/history` | readline | Indefinite |
 | Artifacts | `tools.artifacts_path` | Files written by tools | Indefinite |
-| pi workspace | `~/.config/aiassistant/pi_workspace` | Any | Until the user clears it |
-| pi config | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`) | pi-owned | pi-owned |
 
 The markdown conversation format is **frozen from as-built**
 (`brain/respond.py:41-63`): a `## HH:MM:SS | speaker` header per turn, the
@@ -44,13 +41,11 @@ Written exactly once per turn (REQ-MEM-002). The as-built code had two writers â
 | --- | --- | --- |
 | `session_id` | str | Generated per process start unless resumed |
 | `agent_id` | str | The `agents:` key, e.g. `jarvis` |
-| `harness` | `native` \| `pi` | Recorded per turn so history is interpretable |
+| `harness` | `native` | Recorded per turn so history is interpretable |
 | `resumed_from` | str \| null | Prior session id when `memory.resume_session` is true |
 
 Context passed to the **native** harness is bounded by
-`conversation.context_turns`. The **pi** harness owns its own context and
-receives only the bare user text, except for one post-restart prime
-(REQ-MEM-004).
+`conversation.context_turns`.
 
 ## Facts
 
@@ -111,22 +106,12 @@ agents:
     identity:
       name: Jarvis
       wake_phrases: ["hi jarvis"]
-    harness: native            # native | pi
+    harness: native            # the loop owner
     llm:                       # native only
       provider: ollama         # ollama | openai
       model: qwen3:latest
       url: http://127.0.0.1:11434
       api_key: ""              # prefer the environment
-    pi:                        # pi only
-      enabled: false           # explicit opt-in (REQ-SEC-003)
-      command: "pi"
-      workspace: "~/.config/aiassistant/pi_workspace"
-      tools: [read, write, edit, grep, find, ls]
-      policy_extension: "builtin"
-      allow_channels: [console, voice, orb, tui]
-      turn_timeout_s: 300
-      restart_backoff_s: [1, 2, 4, 8, 30]
-      memory_prime_on_start: true
 
 bus:
   bind: "127.0.0.1"            # widening requires a token (REQ-SEC-002)
@@ -146,4 +131,3 @@ are accepted with a deprecation warning and mapped (REQ-CFG-004).
 | Embeddings | Derived; safe to delete and rebuild |
 | Schedules | Deleted when fired (one-shot) or re-armed (recurring) |
 | Transcript shown in the orb or TUI | Session only; scrollback reads from memory on demand. Neither frontend persists state (no TUI history file; the console's readline history is separate) |
-| pi session context | Lifetime of the pi child process (`--no-session`) |

@@ -82,7 +82,7 @@ class AgentModule(BaseModule):
         # Persistence jobs outlive the turn; kept so they are not garbage
         # collected mid-flight and can be awaited on shutdown.
         self._background_tasks: set[asyncio.Task] = set()
-        # Built in setup(); the loop owner for this agent (native or pi).
+        # Built in setup(); the loop owner for this agent.
         self.harness: AgentHarness | None = None
 
     async def setup(self) -> bool:
@@ -98,23 +98,18 @@ class AgentModule(BaseModule):
             logger.error("Harness not available: %s", exc)
             return False
 
-        # A process-backed harness (pi) must be spawned before probing.
-        ensure = getattr(self.harness, "ensure_started", None)
-        if ensure is not None:
-            try:
-                await ensure()
-            except FileNotFoundError as exc:
-                logger.error("Harness %s cannot start: %s", self.harness.name, exc)
-                return False
-            except Exception as exc:
-                logger.error("Harness %s failed to start: %s", self.harness.name, exc)
-                return False
+        # A process-backed harness starts its resources before probing. The
+        # default does nothing, so this is always safe to call.
+        try:
+            await self.harness.ensure_started()
+        except Exception as exc:
+            logger.error("Harness %s cannot start: %s", self.harness.name, exc)
+            return False
 
-        # Channels allowed to reach this harness. pi is excluded from
-        # untrusted channels by default: it runs with the user's permissions
-        # (REQ-SEC-003, RISK-0003).
-        self.allowed_channels = set(agent_cfg.get("pi", {}).get("allow_channels", [])) \
-            if self.harness.caps.owns_tools else set()
+        # Channels allowed to reach this harness. Empty means all for a harness
+        # that does not own tools; a tool-owning harness gates them so untrusted
+        # channels cannot drive tool execution (REQ-SEC-003, RISK-0003).
+        self.allowed_channels: set[str] = set()
 
         health = await self.harness.health()
         if not health.ok:
@@ -128,7 +123,10 @@ class AgentModule(BaseModule):
         # Embeddings use the harness's provider when the harness is our own, so
         # a single configured endpoint serves both.
         emb_cfg = agent_cfg.get("embeddings", {})
-        provider = getattr(self.harness, "provider", None)
+        # Embeddings may be served by a different provider. Resolve them from
+        # the harness's declared provider when it has one; a harness with none
+        # (or its own) leaves embeddings unconfigured here.
+        provider = self.harness.provider
         if provider is not None:
             try:
                 self.embeddings.set_llm(
@@ -220,7 +218,7 @@ class AgentModule(BaseModule):
         self._turn_cancelled = True
         task = self._turn_task
 
-        # Ask the harness first: for pi this sends clear_queue + abort, and it
+        # Ask the harness first: it may have in-flight work to stop, and it
         # must reach the backend before we tear the task down.
         if self.harness is not None and task and not task.done():
             try:
@@ -317,11 +315,8 @@ class AgentModule(BaseModule):
         if not tools:
             return
         self.tool_cache.load(tools)
-        schemas = self.tool_cache.get_formatted_schemas()
-        # NativeHarness reads schemas per turn; keep it current without a restart.
-        harness = self.harness
-        if harness is not None and hasattr(harness, "tool_schemas"):
-            harness.tool_schemas = schemas
+        # Schemas travel in TurnRequest each turn, so there is nothing to push
+        # into the harness here.
         logger.info("Loaded %d tools from tools module: %s",
                     len(tools), sorted(self.tool_cache.tool_names))
 
@@ -339,8 +334,8 @@ class AgentModule(BaseModule):
         channel = payload.get("channel") or payload.get("source") or ""
         should_speak = topics.should_speak(channel)
 
-        # A tool-owning harness (pi) must not accept untrusted input channels
-        # unless explicitly allowed (REQ-SEC-003, RISK-0003).
+        # A tool-owning harness must not accept untrusted input channels unless
+        # explicitly allowed (REQ-SEC-003, RISK-0003).
         if self.allowed_channels and channel and channel not in self.allowed_channels:
             logger.warning(
                 "Channel %r is not allowed to reach the %s harness; ignoring",
@@ -349,7 +344,7 @@ class AgentModule(BaseModule):
             self.bus.publish(topics.AGENT_TURN_ERROR, {
                 "message": "That input channel is not enabled for this assistant.",
                 "class": "config",
-                "hint": "Add the channel to agents.<id>.pi.allow_channels to enable it.",
+                "hint": "The active harness does not accept input from this channel.",
             })
             return
 
@@ -609,8 +604,12 @@ class AgentModule(BaseModule):
             pass
 
     async def _quick_answer(self, question: str) -> dict:
-        """Answer a short subtask for a skill, without a full turn."""
-        provider = getattr(self.harness, "provider", None)
+        """Answer a short subtask for a skill, without a full turn.
+
+        Uses the harness's declared provider; a harness without one cannot serve
+        a subtask, so the skill gets an empty answer rather than an exception.
+        """
+        provider = self.harness.provider if self.harness is not None else None
         if provider is None:
             return {"answer": "", "thinking": None}
         messages = [{"role": "user", "content": question}]

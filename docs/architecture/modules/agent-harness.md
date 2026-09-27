@@ -1,10 +1,12 @@
 # MOD-0002 — `agent/harness` (interface)
 
-**Purpose:** Define the one contract both harnesses implement, and the one event
-vocabulary the rest of the system consumes.
+**Purpose:** Define the one contract a harness implements, and the one event
+vocabulary the rest of the system consumes. One harness ships — `native` — and
+the seam is open so a future harness can be added without touching the callers
+(REQ-HARNESS-008).
 
 **Must not do:** contain provider-specific or process-specific logic. Those live
-in `harness/native.py` and `harness/pi/`.
+in the implementation (`harness/native.py`).
 
 **Dependencies:** none beyond the standard library and `bus` topic constants.
 
@@ -32,7 +34,7 @@ in `harness/native.py` and `harness/pi/`.
 | Returns | none |
 | Preconditions | none; safe with no active turn |
 | Postconditions | The active iterator will end with `turn_done(cancelled=True)` |
-| Side effects | Backend-specific: pi sends `clear_queue` then `abort`; native cancels the provider stream |
+| Side effects | Backend-specific: native cancels the provider stream |
 | Context | async; safe to call concurrently with an in-flight `run_turn` |
 | Timing | Bounded by the backend's own abort latency; **not** guaranteed instant |
 
@@ -48,7 +50,7 @@ Returns `{ok: bool, detail: str}`. Called at startup and before a turn
 | Returns | `ok` plus a human-readable `detail`; never raises |
 | Preconditions | none; callable before any turn |
 | Postconditions | A truthful readiness answer |
-| Side effects | pi performs an RPC `get_state`; native performs a cheap provider probe |
+| Side effects | native performs a cheap provider probe |
 | Context | async |
 | Timing | Short timeout; a slow probe reports unhealthy rather than hanging |
 
@@ -65,6 +67,22 @@ Static capability declaration:
 | `usage_reporting` | bool | Emits `usage` events |
 | `images` | bool | Accepts image input |
 
+### `AgentHarness.provider -> LLMBackend | None`
+
+The provider this harness drives, or `None`. A class-level default, so a minimal
+implementation ignores it. Callers that need a provider — embeddings resolution
+and skill subtasks — read it here rather than probing the implementation.
+
+### `AgentHarness.ensure_started() -> None`
+
+Start any external resource the harness needs. Called once during setup, before
+the first health probe. The default does nothing; a harness that spawns a
+process overrides it and raises if it cannot start.
+
+### `AgentHarness.close() -> None`
+
+Release resources. The default calls `cancel()`.
+
 ### `TurnEvent` — the vocabulary
 
 | Kind | Payload | Consumer |
@@ -80,7 +98,8 @@ Static capability declaration:
 
 ## REQUIRES
 
-Nothing. Implementations may require `reasoning/` (native) or a subprocess (pi).
+Nothing. An implementation may require `reasoning/` (as `native` does) or a
+subprocess, should a future harness need one.
 
 ## OWNS
 
@@ -99,10 +118,9 @@ in `contracts/protocols.md` and in the orb.
 
 | Code | Meaning |
 | --- | --- |
-| `ERR-HARNESS-SPAWN` | The harness process or client could not start |
-| `ERR-HARNESS-DEAD` | The harness died mid-turn |
-| `ERR-HARNESS-PROTOCOL` | The harness produced unparseable output |
 | `ERR-HARNESS-TIMEOUT` | The harness exceeded the turn timeout |
+| `ERR-HARNESS-DEAD` | The harness failed mid-turn |
+| `ERR-HARNESS-PROTOCOL` | The harness produced output the contract cannot express |
 
 ## CONCURRENCY
 
@@ -117,7 +135,7 @@ None. Implementations declare their own.
 
 | Clause | Method | Test |
 | --- | --- | --- |
-| Both implementations satisfy this contract | host (parametrized conformance) | T-0301 |
+| The harness satisfies this contract | host (fake + native conformance) | T-0301 |
 | Event vocabulary mapping | host (fixtures) | T-0302 |
 | Terminal event exactly once | host | T-0301 |
 | `call_id` correlation | host | T-0307 |

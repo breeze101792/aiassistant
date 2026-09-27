@@ -4,13 +4,13 @@ The single entry point for this project's design docs. Read this first.
 
 This doc set describes the **target** system: a refactor of the existing
 bus-modular Python assistant into a voice-first assistant with a native orb UI
-and a pluggable agent harness (native or pi). It was written before the first
-line of implementation, per the project design playbook.
+and a pluggable agent harness. It was written before the first line of
+implementation, per the project design playbook.
 
 > **Implementation status (2026-09-27):** the refactor described here is
 > implemented. `docs/` remains the design of record; `PLAN.md` records what was
-> built and the two findings that changed it (live pi behavior, the audio
-> segfault in tests).
+> built and the findings that changed it (the audio segfault in tests, and the
+> removal of the external `pi` harness, leaving the seam open).
 >
 > **Status legend**
 > - `draft` — written, not yet reviewed
@@ -30,7 +30,7 @@ line of implementation, per the project design playbook.
 | [architecture/modules/](architecture/modules/) | `MOD-0001`..`MOD-0012` | as-built | Per-module PROVIDES/REQUIRES contracts |
 | [architecture/data-model.md](architecture/data-model.md) | — | as-built | Entities, storage, lifetime |
 | [architecture/decisions/](architecture/decisions/) | `ADR-*` | as-built | Decision log: decision, why, rejected alternatives |
-| [contracts/protocols.md](contracts/protocols.md) | `IF-*` | as-built | Bus topics, pi RPC, audio plane |
+| [contracts/protocols.md](contracts/protocols.md) | `IF-*` | as-built | Bus topics, harness event contract, audio plane |
 | [contracts/schemas.md](contracts/schemas.md) | `IF-*` | as-built | Payload and config schemas |
 | [contracts/api.md](contracts/api.md) | `IF-*` | as-built | Orb ↔ assistant bridge API |
 | [testing/TEST_PLAN.md](testing/TEST_PLAN.md) | — | as-built | Strategy, host vs on-target, layout |
@@ -38,9 +38,8 @@ line of implementation, per the project design playbook.
 | [testing/trace.md](testing/trace.md) | — | as-built | REQ → T coverage matrix |
 | [operations/build.md](operations/build.md) | — | as-built | Toolchain, install, run |
 | [operations/deploy.md](operations/deploy.md) | — | as-built | Packaging and release |
-| [operations/repos.md](operations/repos.md) | — | as-built | Dependency pinning (pi, models) |
-| [security/threat-model.md](security/threat-model.md) | `RISK-*` | as-built | Trust boundaries, pi confinement |
-| [research/pi-rpc.md](research/pi-rpc.md) | — | reviewed | Established pi RPC facts with citations |
+| [operations/repos.md](operations/repos.md) | — | as-built | Dependency pinning (models) |
+| [security/threat-model.md](security/threat-model.md) | `RISK-*` | as-built | Trust boundaries, what is not contained |
 | [research/ui-stack.md](research/ui-stack.md) | — | reviewed | Native UI stack comparison |
 | [ui/](ui/) | — | as-built | Orb design: tokens, states, layout, a11y |
 | [../PLAN.md](../PLAN.md) | — | as-built | Execution plan and work breakdown |
@@ -48,14 +47,14 @@ line of implementation, per the project design playbook.
 ## What this project is
 
 A voice-first desktop assistant. It listens, transcribes, reasons, speaks, and
-shows an ambient orb. The reasoning backend is swappable between a first-party
-loop (`native`) and the external **pi** coding agent.
+shows an ambient orb. The reasoning loop is ours (`native`), behind a harness
+seam that is open for a future implementation.
 
 - **Voice in / audio out** — speech input, spoken output, interruptible.
 - **Native orb UI** — PySide6 / Qt Quick, macOS and Linux. No browser, no
   terminal as the primary interface.
-- **Pluggable agent harness** — the loop owner is selectable per agent:
-  `native` (our loop + a model provider) or `pi` (external harness via JSONL RPC).
+- **Pluggable agent harness** — the loop owner is selectable per agent; the
+  default and only shipped value is `native` (our loop + a model provider).
 - **Console fallback** — the assistant stays usable headless and in text.
 
 ## The three-layer model
@@ -66,10 +65,10 @@ Confusion about "the model" is the most common trap here. Three distinct layers:
 | --- | --- | --- |
 | Model provider | Serves an LLM over an API | Ollama, OpenAI |
 | Model | The specific weights | `qwen3:latest` |
-| **Agent harness** | Owns the reasoning loop: prompts the model, parses and runs tool calls, manages context | `native`, `pi` |
+| **Agent harness** | Owns the reasoning loop: prompts the model, parses and runs tool calls, manages context | `native` |
 
-"Switching the brain" means switching the **harness**. pi is a harness, not a
-provider and not an inference engine — it calls its own provider. See
+"Switching the brain" means switching the **harness**. A harness is not a
+provider and not an inference engine. See
 [ADR-0004](architecture/decisions/ADR-0004-harness-vs-provider.md).
 
 ## Reading order

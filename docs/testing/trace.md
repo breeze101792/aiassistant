@@ -11,7 +11,7 @@ reason. Case detail: [cases.md](cases.md). Method definitions:
 
 ## 1. REQ → T
 
-All 80 requirements from
+All 93 requirements from
 [../requirements/requirements.md](../requirements/requirements.md).
 
 ### Voice I/O
@@ -66,12 +66,13 @@ All 80 requirements from
 | REQ | Status | Proving T | Method |
 | --- | --- | --- | --- |
 | REQ-HARNESS-001 | **unverified — config swap changes behavior not asserted** | — | — |
-| REQ-HARNESS-002 | verified | T-0301, T-0302, T-0303, T-0305, T-0307 | host |
-| REQ-HARNESS-003 | verified | T-0302, T-0306 | host |
-| REQ-HARNESS-004 | verified | T-0308, T-0310 | host, mac, linux |
+| REQ-HARNESS-002 | verified | T-0301, T-0302, T-0303, T-0307 | host |
+| REQ-HARNESS-003 | withdrawn 2026-09-27 (external harness removed) | — | — |
+| REQ-HARNESS-004 | withdrawn 2026-09-27 (external harness removed) | — | — |
 | REQ-HARNESS-005 | verified | T-0301 | host |
 | REQ-HARNESS-006 | verified | T-0304 | host |
 | REQ-HARNESS-007 | verified | T-0304 | host |
+| REQ-HARNESS-008 | **unverified — seam-open registration not asserted** | — | — |
 | REQ-BACKEND-001 | verified | T-0601 | host |
 | REQ-BACKEND-002 | verified | T-0603 | host |
 
@@ -92,7 +93,7 @@ All 80 requirements from
 | REQ-MEM-001 | verified | T-0402 | host |
 | REQ-MEM-002 | verified | T-0402 | host |
 | REQ-MEM-003 | **unverified — resume across restarts not tested** | — | — |
-| REQ-MEM-004 | verified | T-0305 | host |
+| REQ-MEM-004 | **unverified — no case asserts memory with a non-native harness** | — | — |
 | REQ-MEM-005 | **unverified — no-secret-in-memory assertion missing** | — | — |
 | REQ-MEM-006 | verified | T-0605 | host (loop-yield) |
 
@@ -159,8 +160,8 @@ All 80 requirements from
 | REQ-SETUP-002 | **unverified — guided/skippable setup not tested** | — | — |
 | REQ-SETUP-003 | **unverified — no-harness dead-end path not tested** | — | — |
 | REQ-ERR-001 | verified | T-0606 | host |
-| REQ-ERR-002 | verified | T-0308, T-0207 | host |
-| REQ-ERR-003 | verified | T-0308 | host |
+| REQ-ERR-002 | **partially verified** — orb-crash recovery covered by T-0207; harness-crash recovery was external-harness-specific and is not re-tested | T-0207 | host |
+| REQ-ERR-003 | **partially verified** — visible provider errors covered by T-0606; no fault-injection case for a dead harness | T-0606 | host |
 
 ### Scheduler
 
@@ -180,11 +181,11 @@ tests trace rather than being flagged as scope creep.
 | --- | --- | --- | --- |
 | REQ-SEC-001 | verified | T-0509 | host |
 | REQ-SEC-002 | verified | T-0508, T-0509 | host |
-| REQ-SEC-003 | **unverified — pi opt-in refusal not tested** | — | — |
-| REQ-SEC-004 | verified | T-0309 | host |
-| REQ-SEC-005 | **unverified — RPC `bash` never sent is an inspection claim; no T asserts it** | — | — |
-| REQ-SEC-006 | **unverified — minimal child env not tested** | — | — |
-| REQ-SEC-007 | **unverified — threat-model doc is an inspection claim; no T asserts it** | — | — |
+| REQ-SEC-003 | withdrawn 2026-09-27 (external harness removed) | — | — |
+| REQ-SEC-004 | withdrawn 2026-09-27 (external harness removed) | — | — |
+| REQ-SEC-005 | withdrawn 2026-09-27 (external harness removed) | — | — |
+| REQ-SEC-006 | withdrawn 2026-09-27 (external harness removed) | — | — |
+| REQ-SEC-007 | withdrawn 2026-09-27 (external harness removed) | — | — |
 
 ## 2. T → REQ
 
@@ -207,16 +208,11 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 | T-0205 | Reconnect resyncs without duplicates | REQ-ORB-005 |
 | T-0206 | Reduced motion disables animation | REQ-ORB-007 |
 | T-0207 | Orb crash does not take down the assistant | REQ-ORB-001, REQ-ERR-002 |
-| T-0301 | Contract conformance, both harnesses | REQ-HARNESS-002, REQ-HARNESS-005, REQ-CONV-002 |
-| T-0302 | Event mapping matches fixtures | REQ-HARNESS-002, REQ-HARNESS-003 |
+| T-0301 | Contract conformance | REQ-HARNESS-002, REQ-HARNESS-005, REQ-CONV-002 |
+| T-0302 | Event mapping matches fixtures | REQ-HARNESS-002 |
 | T-0303 | Cancel ends the turn as cancelled | REQ-CONV-003, REQ-HARNESS-002 |
 | T-0304 | Unhealthy harness fails, no fallback | REQ-HARNESS-006, REQ-HARNESS-007 |
-| T-0305 | pi prompt has no memory prefix | REQ-MEM-004, REQ-HARNESS-002 |
-| T-0306 | Malformed stdout does not kill the reader | REQ-HARNESS-003 |
 | T-0307 | `call_id` correlation | REQ-HARNESS-002 |
-| T-0308 | Crash mid-turn errors and restarts | REQ-HARNESS-004, REQ-ERR-002, REQ-ERR-003 |
-| T-0309 | Workspace guard blocks out-of-workspace path | REQ-SEC-004 |
-| T-0310 | No zombie after quit | REQ-HARNESS-004 |
 | T-0401 | Every turn is terminal | REQ-CONV-006 |
 | T-0402 | Turn persisted exactly once | REQ-MEM-001, REQ-MEM-002 |
 | T-0501 | Pub/sub delivery | REQ-STRUCT-003 |
@@ -274,20 +270,22 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 
 | Count | Value |
 | --- | --- |
-| Total requirements | 84 |
-| Requirements verified (full) | 52 |
-| Requirements partial (a proving T covers part of the clause) | 1 (REQ-STRUCT-001) |
-| Requirements `unverified` | 31 |
-| Total test cases | 62 |
-| Cases tracing to a REQ | 62 |
+| Total requirements | 93 |
+| Requirements withdrawn 2026-09-27 (external harness removed) | 7 |
+| Requirements verified (full) | 63 |
+| Requirements partial (a proving T covers part of the clause) | 2 (REQ-STRUCT-001, REQ-CFG-002) |
+| Requirements `unverified` | 28 |
+| Total test cases | 72 |
+| Cases tracing to a REQ | 72 |
 | Cases flagged scope creep | 0 |
 
-The 31 unverified requirements cluster in five backlog areas the current T set
-does not touch: **configuration** (all 6), **first-run/setup** (3),
-**platform** (3), **security** (4), and **structure** (3), plus the deferred and
-inspection-only behavior in voice/wake/orb (`REQ-VOICE-004`,
+The 28 unverified requirements cluster in four backlog areas the current T set
+does not touch: **configuration** (5, with REQ-CFG-002 partial),
+**first-run/setup** (3), **platform** (3), and **structure** (3), plus the
+deferred and inspection-only behavior in voice/wake/orb (`REQ-VOICE-004`,
 `REQ-WAKE-001/004/007/008`, `REQ-CONV-001/005`, `REQ-ORB-003/004`,
-`REQ-HARNESS-001`, `REQ-MEM-003/005`). Closing them adds
-`tests/test_config.py`, `tests/test_security.py`, and `tests/test_setup.py`;
-those files are named as the target extension in
-[TEST_PLAN.md § 2](TEST_PLAN.md#2-framework-and-layout).
+`REQ-HARNESS-001/008`, `REQ-MEM-003/004/005`). The security backlog is gone: the
+external-harness requirements were withdrawn with the harness, and
+`REQ-SEC-001/002` are verified. Closing the rest adds `tests/test_config.py`,
+`tests/test_security.py`, and `tests/test_setup.py`; those files are named as
+the target extension in [TEST_PLAN.md § 2](TEST_PLAN.md#2-framework-and-layout).

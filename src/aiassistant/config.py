@@ -75,17 +75,6 @@ DEFAULTS: dict = {
             "max_tokens": 4096,
             "temperature": 0.7,
         },
-        "pi": {
-            "enabled": False,
-            "command": "pi",
-            "workspace": "~/.config/aiassistant/pi_workspace",
-            "tools": ["read", "write", "edit", "grep", "find", "ls"],
-            "policy_extension": "builtin",
-            "allow_channels": ["console", "voice", "orb", "tui"],
-            "turn_timeout_s": 300,
-            "restart_backoff_s": [1, 2, 4, 8, 30],
-            "memory_prime_on_start": True,
-        },
         "memory": {
             "conversations_path": ".config/aiassistant/memory/conversations",
             "facts_path": ".config/aiassistant/memory/facts",

@@ -58,23 +58,23 @@ replaces the assembled text (`features/orb-ui.md:48-52`).
 | `message` | str | yes | Human-readable error |
 | `class` | enum `config` \| `audio` \| `harness` \| `tool` \| `memory` | yes | Error classification (REQ-ERR-001) |
 | `hint` | str | yes | **Actionable recovery hint** (REQ-ERR-001). Never empty; when nothing better exists, use the next step from `flows.md` (g). |
-| `code` | str \| null | no | The internal code, e.g. `ERR-PI-DEAD`. Useful for logs; the UI keys off `class`. |
+| `code` | str \| null | no | The internal code, e.g. `ERR-HARNESS-DEAD`. Useful for logs; the UI keys off `class`. |
 
 #### Harness code → error class mapping
 
-The harness reports internal codes (`ERR-PI-*`, `ERR-PROVIDER-*`,
-`ERR-HARNESS-*`); the orb keys its overlay off the five-value `class` enum.
-This table is the single mapping, so no consumer guesses.
+The harness reports internal codes (`ERR-PROVIDER-*`, `ERR-HARNESS-*`); the orb
+keys its overlay off the five-value `class` enum. This table is the single
+mapping, so no consumer guesses.
 
 | Internal code | `class` | `hint` |
 | --- | --- | --- |
-| `ERR-PI-SPAWN`, `ERR-HARNESS-SPAWN` | `harness` | "pi is not installed or not executable. Run `scripts/setup_pi.sh`, or set `agents.<id>.harness: native`." |
-| `ERR-PI-DEAD`, `ERR-HARNESS-DEAD` | `harness` | "The harness stopped. It will restart; if this repeats, check the log and switch harness." |
-| `ERR-PI-PROTOCOL`, `ERR-HARNESS-PROTOCOL` | `harness` | "The harness sent an unusable response. Try the turn again." |
-| `ERR-PI-ABORT-TIMEOUT`, `ERR-HARNESS-TIMEOUT`, `ERR-AGENT-TURN-TIMEOUT` | `harness` | "The harness did not respond in time. Retry, or lower `agents.<id>.pi.turn_timeout_s`." |
+| `ERR-HARNESS-SPAWN` | `harness` | "The harness could not start. Check the log and the `agent.harness` value." |
+| `ERR-HARNESS-DEAD` | `harness` | "The harness stopped. It will restart; if this repeats, check the log and switch harness." |
+| `ERR-HARNESS-PROTOCOL` | `harness` | "The harness sent an unusable response. Try the turn again." |
+| `ERR-HARNESS-TIMEOUT`, `ERR-AGENT-TURN-TIMEOUT` | `harness` | "The harness did not respond in time. Retry, or raise `conversation.turn_timeout_s`." |
 | `ERR-PROVIDER-UNAVAILABLE` | `harness` | "The model provider is unreachable. Check that it is running, then retry." |
 | `ERR-PROVIDER-AUTH` | `config` | "The provider rejected the credential. Set it in the environment (REQ-CFG-005)." |
-| `ERR-PROVIDER-MODEL` | `config` | "The model is not available. Pull it, or set `agents.<id>.llm.model`." |
+| `ERR-PROVIDER-MODEL` | `config` | "The model is not available. Pull it, or set `agent.llm.model`." |
 | `ERR-PROVIDER-TIMEOUT` | `harness` | "The model did not respond in time. Retry." |
 | `ERR-TOOL-NOT-FOUND`, `ERR-TOOL-DENIED`, `ERR-TOOL-FAILED`, `ERR-AGENT-TOOL-TIMEOUT` | `tool` | "The tool could not run. Retry, or rephrase the request." |
 | `ERR-VOICE-NO-INPUT` | `audio` | "No microphone. Plug one in or grant permission, then retry from the UI (REQ-ERR-002)." |
@@ -95,13 +95,13 @@ cannot render: `agent.delta.kind` covers only text and thinking.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `call_id` | str | yes | Correlates the start and the end. For pi it is `toolCallId`; for the native harness it is our own id. |
+| `call_id` | str | yes | Correlates the start and the end. The native harness assigns it. |
 | `name` | str | yes | Tool name |
 | `status` | enum `running` \| `partial` \| `done` \| `error` | yes | |
 | `args` | object \| null | no | Present on `running` |
 | `result` | any \| null | no | Present on `done` / `error`; truncated for display |
 | `duration_ms` | float \| null | no | Present on `done` |
-| `source` | enum `native` \| `pi` | yes | Which harness ran it — the audit trail differs (ADR-0008) |
+| `source` | enum `native` | yes | Which harness ran it |
 
 Consumers: the orb transcript (activity row), the console (inline line). The
 payload is display-only; nothing is derived from it.
@@ -122,7 +122,7 @@ dropped the oldest segment (IF-0006).
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `harness` | `"native"` \| `"pi"` | yes | The active loop owner |
+| `harness` | `"native"` | yes | The active loop owner |
 | `model` | str | yes | Model reported by the harness |
 
 ### `voice.state`
@@ -207,22 +207,13 @@ shows the canonical block; fields:
 | `agents.<id>.identity.name` | str | Display name |
 | `agents.<id>.identity.wake_phrases` | list[str] | Wake phrases for this agent |
 | `agents.<id>.persona` | str | System prompt for this agent (was `brain.persona`, `config.yaml:9-11`) |
-| `agents.<id>.harness` | `native` \| `pi` | Loop owner (REQ-HARNESS-001) |
+| `agents.<id>.harness` | `native` | Loop owner (REQ-HARNESS-001) |
 | `agents.<id>.llm.provider` | `ollama` \| `openai` | Native only (REQ-BACKEND-001) |
 | `agents.<id>.llm.model` | str | e.g. `qwen3:latest` |
 | `agents.<id>.llm.url` | str | Provider endpoint |
 | `agents.<id>.llm.api_key` | str | Prefer the environment (REQ-CFG-005) |
 | `agents.<id>.llm.max_tokens` | int | As-built `config.yaml:17` |
 | `agents.<id>.llm.temperature` | float | As-built `config.yaml:18` |
-| `agents.<id>.pi.enabled` | bool | Explicit opt-in (REQ-SEC-003) |
-| `agents.<id>.pi.command` | str | The `pi` binary |
-| `agents.<id>.pi.workspace` | str | Child `cwd`; default `~/.config/aiassistant/pi_workspace`. Absolute recommended ([ADR-0016](../architecture/decisions/ADR-0016-pi-paths-cwd-independent.md)) |
-| `agents.<id>.pi.tools` | list[str] | Tool allowlist; no shell |
-| `agents.<id>.pi.policy_extension` | str \| null | `"builtin"` loads the shipped `workspace_guard.ts`; any other string is a path (`~` expanded; a missing file fails the pi harness; the assistant still starts, without the agent); `null` disables the guard |
-| `agents.<id>.pi.allow_channels` | list[str] | Channels allowed to reach pi; includes `tui` when the terminal frontend should drive pi |
-| `agents.<id>.pi.turn_timeout_s` | int | **The** abort timeout for a pi turn. There is no separate `conversation.turn_timeout_s` for pi — the agent-level timeout is the fallback when this is unset. |
-| `agents.<id>.pi.restart_backoff_s` | list[int] | Backoff schedule |
-| `agents.<id>.pi.memory_prime_on_start` | bool | Post-restart prime (REQ-MEM-004) |
 
 **Active-agent resolution:** exactly one agent is active per process.
 `agents.active` names it; if the map has one entry and `agents.active` is unset,
@@ -266,14 +257,14 @@ A single rule, so "applies now" versus "needs a restart" is never a guess.
 | `voice.tts.voice`, `voice.tts.speed`, `voice.speak_text_turns` | **Runtime** — read at the next utterance |
 | `voice.listen.mode`, mute | **Runtime** — via `command.voice.*` |
 | `console.prompt`, log level | **Runtime** |
-| `agents.active`, `agents.<id>.harness`, `agents.<id>.llm.*`, `agents.<id>.pi.*` | **Restart** — the harness and its process are built once at startup (REQ-HARNESS-001) |
+| `agents.active`, `agents.<id>.harness`, `agents.<id>.llm.*` | **Restart** — the harness is built once at startup (REQ-HARNESS-001) |
 | `bus.*`, `tools.paths`, `voice.asr.backend`, `voice.tts.backend`, embedding provider | **Restart** — backends and the process model are fixed at startup |
 | Everything else | **Restart** (the safe default) |
 
 There is no config file watcher in the MVP. The console `/harness` command
-performs a runtime swap by rebuilding the harness in place; it is the one
-exception, and it exists because it is cheap and useful. All other changes are
-picked up on the next launch.
+rebuilds the active harness in place; it is the one exception, and it exists
+because it is cheap and useful. All other changes are picked up on the next
+launch.
 
 ### Legacy key migration
 
@@ -342,9 +333,7 @@ copy would be wrong by a factor of 1000 or name a different concept.
 
 New keys with no legacy source, which get defaults and no warning:
 `agents.active`, `agents.<id>.harness` (defaults `native`),
-`agents.<id>.identity.name` (defaults `Jarvis`),
-`agents.<id>.pi.*` (defaults from
-[data-model.md](../architecture/data-model.md#config-model)), `bus.bind`
+`agents.<id>.identity.name` (defaults `Jarvis`), `bus.bind`
 (`127.0.0.1`), `voice.listen.mode` (`ptt`), `voice.barge_in.*`, `display.*`,
 `conversation.*`, `memory.resume_session`, `memory.semantic`.
 

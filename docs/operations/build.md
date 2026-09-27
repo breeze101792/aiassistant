@@ -56,20 +56,6 @@ Legacy section names are accepted with a deprecation warning and mapped to the
 new keys (REQ-CFG-004). The full nested mapping is in
 [contracts/schemas.md § Legacy key migration](../contracts/schemas.md#legacy-key-migration).
 
-## Optional: install pi
-
-```sh
-./scripts/setup_pi.sh
-```
-
-Installs the pinned version, preferring the standalone darwin/linux binary so
-Node is not required. See [repos.md](repos.md) for the version and the upgrade
-procedure.
-
-pi is **not** a default harness. To enable it, set `agents.<id>.harness: pi`
-and `agents.<id>.pi.enabled: true`, then read
-[security/threat-model.md](../security/threat-model.md).
-
 ## Dependencies to watch
 
 | Dependency | Change | Reason |
@@ -99,4 +85,4 @@ and are not part of the default run.
 | No microphone | Device absent or permission denied (macOS) | Grant access in System Settings; the app degrades, it does not crash |
 | orb window does not appear | No display, or Wayland without a compositor supporting it | Run `--frontend none`; see the platform caveats in [ui-stack research](../research/ui-stack.md) |
 | Backend-down in the orb | Harness unhealthy | Check `/status` in the console; see [flows (g)](../requirements/flows.md#g-harness-unavailable--model-down) |
-| pi will not start | `pi.enabled` not set, or the binary is missing | Run `scripts/setup_pi.sh`, then enable it |
+| Harness will not start | `agent.harness` names an unknown value, or the provider probe fails | Check the value and the log; see [flows (g)](../requirements/flows.md#g-harness-unavailable--model-down) |

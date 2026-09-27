@@ -193,9 +193,10 @@ assumptions.
 
 #### The spike, as an executable procedure
 
-Each step has a pass/fail, and the outcome is written back into
-[IF-0003](docs/contracts/protocols.md#if-0003-pi-rpc) and
-[research/pi-rpc.md](docs/research/pi-rpc.md). No step may be assumed.
+Each step has a pass/fail, and the outcome is written back into IF-0003
+(`docs/contracts/protocols.md`) and `docs/research/pi-rpc.md`. No step may be
+assumed. (Both documents were removed in Round 5; the references are kept as the
+record of what this step fed at the time.)
 
 | Step | Action | Pass condition |
 | --- | --- | --- |
@@ -447,6 +448,40 @@ reaches them.
   `config.example.yaml` matches `DEFAULTS` key for key, so the example cannot
   drift into a lie (REQ-CFG-008). Full suite: **437 passed, 5 skipped**, 5
   failed (the same environment-only failures).
+
+## Round 5 — remove the external pi harness (2026-09-27)
+
+By user decision, the external `pi` coding agent was removed from the code and
+its traces removed from the docs. This round records what changed; earlier rounds
+stand as the record of what was true then.
+
+**Kept intentionally:** the harness abstraction — `AgentHarness`, `HarnessCaps`,
+`create_harness`, and `FakeHarness`. One implementation ships (`native`); the
+seam stays open so a future harness is added by implementing the contract and
+registering it in the factory (recorded as REQ-HARNESS-008). The `agent.harness`
+and `agent.llm` config keys remain; the `agent.pi.*` block is gone.
+
+**Withdrawn, not renumbered:**
+
+- ADRs ADR-0007, ADR-0008, ADR-0012, ADR-0016 — files deleted, index rows
+  marked withdrawn.
+- REQ-HARNESS-003/004 and REQ-SEC-003..007 — withdrawn; REQ-HARNESS-001/002/005/
+  006/007 were rewritten and REQ-HARNESS-008 added. The withdrawn numbers are
+  not reused.
+- Interface IF-0003 (pi RPC) — withdrawn; other IF numbers unchanged.
+- MOD contract `pi-harness.md` — deleted. `docs/architecture/modules/tui.md` is
+  now MOD-0012.
+
+**Deleted:** `docs/architecture/modules/pi-harness.md`,
+`docs/research/pi-rpc.md`, the four external-harness ADRs, `scripts/setup_pi.sh`,
+`src/aiassistant/agent/harness/pi/` (and `workspace_guard.ts`).
+
+**Files and tests:** the two pi test modules (`tests/test_pi_adapter.py`,
+`tests/test_pi_spike_findings.py`) were deleted; test modules fall from 26 to 24
+and test functions from 433 to 380. The suite collects 355 cases excluding
+`tests/test_voice_asr.py`, which cannot import on this host (`libstdc++` absent);
+of the rest, 352 pass, 1 skips, and 2 fail on the two Ollama-dependent integration
+cases. No test file links to a deleted doc.
 
 ## Open questions
 

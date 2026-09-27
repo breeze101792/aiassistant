@@ -22,7 +22,7 @@ Reads stdin on an executor, never blocking the loop. Persists readline history.
 | `/status` | Module registry and harness health |
 | `/mute` | Toggle microphone mute |
 | `/stop` | Publish `command.agent.interrupt` |
-| `/harness [native\|pi]` | Show or switch the harness |
+| `/harness [native]` | Show or switch the harness |
 | `/new` | Start a new session |
 | `/log [level]` | Show or set the log level |
 | `/thinking` | Toggle thinking display |

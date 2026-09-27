@@ -1,8 +1,8 @@
 # Wire Protocols
 
 The external wire contracts. A **contract** is a boundary where the other side
-is not ours: the orb process, upstream `pi`, or the OS audio stack
-([architecture/overview.md § Boundaries](../architecture/overview.md#boundaries)).
+is not ours: the orb process, a future out-of-process harness, or the OS audio
+stack ([architecture/overview.md § Boundaries](../architecture/overview.md#boundaries)).
 
 Status legend: `as-built` reflects shipped code · `new` is the target, not yet
 implemented · `unverified` is a claim no test or source confirms yet.
@@ -11,7 +11,7 @@ implemented · `unverified` is a claim no test or source confirms yet.
 | --- | --- | --- |
 | [IF-0001](#if-0001-bus-websocket-bridge-protocol) | Bus WebSocket bridge | as-built + target changes |
 | [IF-0002](#if-0002-agent-harness-event-contract) | Agent harness event contract | new |
-| [IF-0003](#if-0003-pi-rpc-protocol) | pi RPC (our subset) | verified-from-docs + unverified list |
+| IF-0003 | pi RPC (our subset) | withdrawn 2026-09-27 (external harness removed) |
 | [IF-0004](#if-0004-orb-bridge-api) | Orb bridge API | new |
 | [IF-0005](#if-0005-voice-events) | Voice events | new |
 | [IF-0006](#if-0006-audio-plane) | Audio plane | new |
@@ -84,7 +84,7 @@ out-of-process clients; the client library is `bridge/`
 reads, so the orb, TTS chunker, and `agent/` never branch on which harness is
 running.
 
-**Participants:** `agent/harness` implementations (`native`, `pi`) → `agent/ →
+**Participants:** `agent/harness` implementations (`native`) → `agent/ →
 orb / voice` via bus topics.
 
 **Contract owner:** [MOD-0002 `agent/harness`](../architecture/modules/agent-harness.md#turnevent--the-vocabulary).
@@ -114,125 +114,9 @@ orb / voice` via bus topics.
 - Adding a kind is a contract change and must be reflected here and in the orb
   (`agent-harness.md:71-73`).
 
-The pi-specific mapping onto this vocabulary is [IF-0003](#if-0003-pi-rpc-protocol);
-the mapping table is [MOD-0003 § Event mapping](../architecture/modules/pi-harness.md#event-mapping).
-
----
-
-<a id="if-0003-pi-rpc"></a>
-<a id="if-0003-pi-rpc-protocol"></a>
-## IF-0003 pi RPC protocol
-
-**Purpose:** Drive upstream `pi` as a child process and consume its event stream.
-This is the contract with a component we do not own.
-
-**Participants:** `agent/harness/pi` (host) ↔ the `pi` binary (child).
-**Harness module:** [MOD-0003 `agent/harness/pi`](../architecture/modules/pi-harness.md).
-**Intended fact base:** [research/pi-rpc.md](../research/pi-rpc.md) — the
-established facts with source citations, including the verified/unverified
-split this contract depends on.
-
-**Status:** verified-from-docs, except the items marked unverified in
-[Unverified items](#unverified-items). **No host spike has run yet.**
-
-### Start command
-
-```
-pi --mode rpc --no-session \
-   --tools read,write,edit,grep,find,ls \
-   --no-extensions -e <guard.ts> \
-   --no-approve -nc
-```
-
-| Part | Meaning |
-| --- | --- |
-| `--mode rpc` | JSONL RPC instead of interactive UI |
-| `--no-session` | No persisted session (on-disk semantics unverified) |
-| `--tools <allowlist>` | Removes shell execution; no shell tool in the list |
-| `--no-extensions -e <guard.ts>` | Disables ambient extensions, loads only the workspace guard |
-| `--no-approve -nc` | No interactive approval prompts; non-interactive |
-
-The working directory is **not a flag**. `pi` inherits the process `cwd`; the
-host sets it to the configured workspace. There is no documented `--cwd`-style
-flag ([Unverified items](#unverified-items)).
-
-### Framing
-
-| Rule | Detail |
-| --- | --- |
-| One message per line | One complete JSON object per LF-terminated line |
-| Terminator | LF (`\n`) only |
-| Split | Split on `\n` only. Never treat U+2028 / U+2029 as boundaries |
-| stdout | Protocol-only. Diagnostics go to stderr |
-| stderr | Drained by its own task. **Must** be drained or `pi` blocks on a full pipe (`pi-harness.md:27`) |
-| Malformed line | Must not kill the reader (REQ-HARNESS-003, T-0306) |
-
-### Command / response correlation
-
-Commands carry an `id`; the response with the same `id` fulfills the pending
-future (`pi-harness.md:41-43`). Session events have no `id` and are correlated
-**temporally**: every event between a `prompt` response and its `agent_settled`
-belongs to that turn.
-
-### Commands we use
-
-| Command | Request | Response `data` | Notes |
-| --- | --- | --- | --- |
-| `get_state` | `{"id","type":"get_state"}` | shape unverified | Health probe, spawn and pre-turn |
-| `prompt` | `{"id","type":"prompt","message":str}` | `disposition` ∈ `started` / `queued` / `handled` | **A successful response does not mean the model finished.** The response only acknowledges receipt/dispatch |
-| `abort` | `{"id","type":"abort"}` | resolves when pi is idle | Used by `cancel()`; behavior mid-tool unverified |
-| `clear_queue` | `{"id","type":"clear_queue"}` | shape unverified | Sent before `abort` (`pi-harness.md:47`) |
-| `steer` | `{"id","type":"steer","message":str}` | shape unverified | Mid-turn guidance; host usage unverified |
-| `follow_up` | `{"id","type":"follow_up","message":str}` | shape unverified | Queued user message; host usage unverified |
-| `get_session_stats` | `{"id","type":"get_session_stats"}` | shape unverified | Stats |
-| `get_last_assistant_text` | `{"id","type":"get_last_assistant_text"}` | `text` unverified | |
-| `set_model` | `{"id","type":"set_model","model":str}` | shape unverified | |
-
-Request fields beyond `prompt` are documented as our usage intent; their exact
-upstream shapes are **unverified**.
-
-### Event stream we consume
-
-| pi event | Fields we read | Mapped to |
-| --- | --- | --- |
-| `message_update` / `assistantMessageEvent` `text_delta` | text fragment | `text_delta` |
-| `message_update` / `thinking_delta` | text fragment | `thinking_delta` |
-| `message_update` / `toolcall_delta` | arg fragment | accumulated into `tool_call` |
-| `message_update` / `toolcall_end` | complete call | `tool_call` |
-| `message_update` / `text_end` | final text fragment | delta stream end |
-| `tool_execution_start` | `toolCallId`, name | `tool_result(status=running)` |
-| `tool_execution_update` | `toolCallId`, partial | `tool_result(status=partial)` |
-| `tool_execution_end` | `toolCallId`, result, is_error | `tool_result(result, is_error)` |
-| `message_end` | authoritative assistant message | `text_final` |
-| `message_update.usage` | `{input, output, cacheRead, cacheWrite, totalTokens, cost}` | `usage` (`totalTokens` → `total`) |
-| `agent_settled` | — | `turn_done` — **the end-of-turn marker** |
-| `agent_start`, `turn_start`, `turn_end`, `agent_end` | — | lifecycle (logged) |
-| retry events | — | logged / `turn_error` on terminal failure |
-| `compaction_*`, `queue_update`, `session_info_changed` | — | logged, not surfaced (`pi-harness.md:70-71`) |
-
-`toolCallId` correlates a `tool_execution_*` event to its `toolcall_end`, and
-thence to `TurnEvent.tool_call.call_id`.
-
-### Shutdown
-
-Close `stdin`. That is pi's orderly-shutdown signal (`pi-harness.md:29,50`).
-
-> **Closing stdin is NOT a cancel.** To cancel, send `clear_queue` then `abort`.
-> Closing stdin shuts the child down.
-
-### Unverified items
-
-Each item below must be confirmed by a host spike before it is relied on. They
-are marked `unverified`; do not treat them as behavior.
-
-| # | Unverified claim | Why it matters |
-| --- | --- | --- |
-| 1 | Behavior of `abort` while a tool is mid-execution | `cancel()` guarantees depend on it (REQ-CONV-003) |
-| 2 | The exact content-block shape of `message_end` | `text_final` extraction depends on it |
-| 3 | `--no-session` on-disk semantics | Memory continuity and cleanup depend on it |
-| 4 | Behavior of a `prompt` arriving mid-stream | The single-turn gate assumes no reentrancy |
-| 5 | Whether a `--cwd`-style flag exists (**documented: it does not**) | cwd comes from the process environment only |
-| 6 | Binary stdout purity confirmation | The JSONL reader assumes stdout carries protocol bytes only |
+> **IF-0003 was withdrawn 2026-09-27**, when the external `pi` harness was
+> removed. IF-0003 described the JSONL RPC contract with the upstream `pi` binary;
+> no harness is out-of-process today. The number is retired, not reused.
 
 ---
 
@@ -398,7 +282,7 @@ as-built strings for now. Every other listed rename adopts its new value.
 | Constant | Value | Publisher |
 | --- | --- | --- |
 | `AGENT_DELTA` | `agent.delta` | `agent` |
-| `AGENT_TOOL_EVENT` | `agent.tool.event` | `agent` (native and pi) |
+| `AGENT_TOOL_EVENT` | `agent.tool.event` | `agent` |
 | `AGENT_FINAL` | `agent.final` | `agent` |
 | `AGENT_TURN_ERROR` | `agent.turn.error` | `agent` |
 | `AGENT_TRANSCRIPT_SNAPSHOT` | `agent.transcript.snapshot` | `agent` — **resync on reconnect**; the orb requests it when it detects an `agent.delta` index gap |
@@ -461,7 +345,7 @@ The ordered cancel sequence; **order matters**
 | --- | --- | --- |
 | 1 | `agent` | Receives `command.agent.interrupt` |
 | 2 | `agent` | Cancels the **retained** turn task |
-| 3 | `agent` | Calls `harness.cancel()` — pi: `clear_queue` then `abort`; native: cancel the provider stream |
+| 3 | `agent` | Calls `harness.cancel()` — native: cancel the provider stream |
 | 4 | `voice` | Stops playback; sets the stop flag so the callback drains silence |
 | 5 | `voice` | Clears the TTS queue; unmutes the mic |
 | 6 | `agent` | Ends the turn with `turn_done(cancelled=true)`; **no** `agent.final` |
@@ -478,4 +362,3 @@ The ordered cancel sequence; **order matters**
 - [schemas.md](schemas.md) — payload and config field tables.
 - [api.md](api.md) — orb connection sequence and a worked trace.
 - [MOD-0005 `bus`/`bridge`](../architecture/modules/bus-bridge.md) — the server and client.
-- [MOD-0003 `agent/harness/pi`](../architecture/modules/pi-harness.md) — the pi adapter.

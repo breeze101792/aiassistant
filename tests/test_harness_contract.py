@@ -1,10 +1,13 @@
 """Harness contract conformance.
 
 One parametrized suite run against every harness implementation. This is what
-makes REQ-HARNESS-002 real: both harnesses emit one event vocabulary and
-terminate the same way, so nothing downstream has to branch on which is running.
+makes REQ-HARNESS-002 real: any harness emits one event vocabulary and
+terminates the same way, so nothing downstream has to branch on which is
+running.
 
-The pi adapter is added to the parametrization in chunk 4, when it exists.
+`native` is our loop. A second harness is added to the parametrization by
+implementing `AgentHarness` and adding it here; the contract itself does not
+change.
 """
 
 import asyncio
@@ -24,9 +27,8 @@ from aiassistant.agent.harness.fake import FakeHarness
 def _harnesses() -> list[AgentHarness]:
     """Every harness that can be built without a model or a subprocess.
 
-    The pi harness is exercised in tests/test_pi_adapter.py against recorded
-    JSONL and, in the spike, against a live process; it is excluded here because
-    it needs a child process to exist.
+    `FakeHarness` stands in for the real loop so the contract is exercised
+    without a provider; `NativeHarness` is covered in tests/test_agent.py.
     """
     return [FakeHarness(), FakeHarness(deltas=["a"]), FakeHarness(tool_calls=[("t", {})])]
 

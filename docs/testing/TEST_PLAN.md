@@ -42,7 +42,7 @@ Target file layout mirrors the new module names:
 | `tests/test_remote_bus.py` | `bus/remote.py` WS server | T-0505..T-0510 |
 | `tests/test_agent_loop.py` | `agent/` loop, gate, interrupt, persist | T-0301, T-0303, T-0401, T-0402, T-0906 |
 | `tests/test_harness_contract.py` | `agent/harness` interface (parametrized) | T-0301, T-0302, T-0307 |
-| `tests/test_pi_events.py` | `agent/harness/pi` event mapping, lifecycle | T-0302, T-0303, T-0305, T-0306, T-0308..T-0310 |
+| `tests/test_harness_native.py` | `agent/harness/native` loop against a fake provider | T-0301, T-0303, T-0304 |
 | `tests/test_reasoning.py` | `reasoning/` providers, streaming, embeddings | T-0601..T-0606 |
 | `tests/test_tools.py` | `tools/` registry, sandbox, skills | T-0701..T-0705 |
 | `tests/test_voice.py` | `voice/` backends, state machine, wake, device | T-0101, T-0104..T-0107 |
@@ -69,7 +69,7 @@ explicitly replaced; nothing is silently dropped
 
 | Old file | Covers today | New file(s) | What changes |
 | --- | --- | --- | --- |
-| `conftest.py` | `message_bus`, `temp_dir`, `mock_llm` fixtures | `conftest.py` | Keep; add `fake_provider`, `fake_harness`, `fake_pi`, `fake_bridge`, `fake_audio`, per-test `tmp_memory` |
+| `conftest.py` | `message_bus`, `temp_dir`, `mock_llm` fixtures | `conftest.py` | Keep; add `fake_provider`, `fake_harness`, `fake_bridge`, `fake_audio`, per-test `tmp_memory` |
 | `test_brain.py` | Reasoner compression, Reflector retry, Responder, `_strip_thinking`, reasoner tools, ToolCache wiring | `test_reasoning.py`, `test_agent_loop.py`, `test_memory.py` | `Reasoner` splits: provider/strip → `test_reasoning.py`; loop, tool feedback, retry policy → `test_agent_loop.py`; `Responder` persistence collapses into transcript → `test_memory.py` |
 | `test_brain_core.py` | Perceiver, Understander, Planner, Reflector | `test_agent_loop.py` | `understand`/`plan` are deleted; retain only the Reflector policy assertions that survive |
 | `test_bus.py` | Pub/sub, RPC, module lifecycle, user input, remote cleanup, registry | `test_bus.py`, `test_remote_bus.py`, `test_topics.py` | Core bus stays; `TestRemoteBusSubscriptionCleanup` moves to `test_remote_bus.py`; topic-string assertions move to `test_topics.py` |
@@ -94,7 +94,6 @@ noted.
 | --- | --- | --- | --- |
 | **Fake harness** | `AgentHarness` with a scripted event list and declared `HarnessCaps` | Class holds `events: list[TurnEvent]`, `caps`; `run_turn` is an async generator yielding them then `turn_done`; `cancel()` flips the terminal event to `cancelled=True`; `health()` returns a settable `HarnessHealth` | T-0301, T-0303, T-0304, T-0307 |
 | **Fake provider** | `ModelProvider` returning canned streams, embeddings, and typed errors | `chat_stream` yields scripted `StreamChunk`s then a terminal chunk; records each call; `embed`/`embed_batch` return fixed vectors; a `raise_on` switch produces each `ERR-PROVIDER-*` | T-0601..T-0606 |
-| **Fake pi subprocess** | A real child process replaying recorded JSONL, so the pi adapter's pipes are exercised without the `pi` binary | Ship `tests/fake_pi.py` that reads `prompt` lines and writes a `.jsonl` fixture line by line; fixture spawns `sys.executable tests/fake_pi.py` as the configured `pi.command`; fixtures include malformed-line, crash-mid-turn, and guard-block cases | T-0302, T-0303, T-0305, T-0306, T-0308, T-0309 |
 | **Fake bridge** | The `bridge/` client surface the orb consumes | Object capturing `publish()` calls and exposing `emit(topic, payload)` to drive subscribed handlers synchronously; no socket | T-0201..T-0205 |
 | **Fake audio device** | `AudioCapture` and `AudioPlayback` | Capture yields pre-recorded 20 ms int16 frames from a list then stops; Playback records queued buffers, honors the stop flag, and can be told the device is absent | T-0101..T-0108 (mock/rig boundary) |
 
@@ -103,13 +102,14 @@ module's existing dependency-injection seam. No test monkeypatches a concrete
 backend where a documented interface exists
 ([REQ-WAKE-003](../requirements/requirements.md), [REQ-VOICE-004](../requirements/requirements.md)).
 
-## 5. Conformance suite — one suite, both harnesses
+## 5. Conformance suite — one suite, the shipped harness
 
 **Goal:** prove [REQ-HARNESS-002](../requirements/requirements.md) by running
-one parametrized suite against both implementations.
+one parametrized suite against the fake harness and the shipped `native`
+harness.
 
 ```
-@pytest.mark.parametrize("harness", [native_with_fake_provider, pi_with_fake_child])
+@pytest.mark.parametrize("harness", [fake_harness, native_with_fake_provider])
 ```
 
 Every case asserts the same contract clauses from
@@ -126,9 +126,9 @@ Every case asserts the same contract clauses from
 | A second concurrent `run_turn` raises | agent-harness.md CONCURRENCY |
 | `health()` returns `{ok, detail}` | agent-harness.md `health` |
 
-The `native` side uses the fake provider; the `pi` side uses the fake child.
-The same assertions run for both, which is what makes the vocabularies
-provably identical.
+The fake harness pins the contract itself; the `native` side runs the same
+assertions against the fake provider. Running both keeps the shipped harness
+provably conformant and keeps the seam honest for a future implementation.
 
 ## 6. Loop-yield testing — proving nothing blocks the loop
 
@@ -164,7 +164,6 @@ CONCURRENCY: "ASR runs in an executor; it must never run on the event loop").
 | Wayland always-on-top, position, transparency | Compositor-dependent; behavior differs from X11 | `linux` (manual) |
 | macOS permissions (mic, camera, accessibility) | TCC prompts cannot be scripted in CI | `mac` |
 | Real model quality and prompt behavior | Depends on weights, not code | `rig` / manual |
-| Actual `pi` upstream behavior | `abort`-mid-tool, `message_end` shape, `--no-session` semantics are unverified ([protocols.md](../contracts/protocols.md#if-0003-pi-rpc-protocol)) | host spike, then `pi` fixtures |
 
 The host suite covers these only to the edge of the fake. Beyond the edge is a
 `rig` or manual case, never a host assertion dressed up as one.
@@ -173,8 +172,8 @@ The host suite covers these only to the edge of the fake. Beyond the edge is a
 
 | Suite | macOS | Linux | Notes |
 | --- | --- | --- | --- |
-| Pure host (`test_bus`, `test_topics`, `test_reasoning`, `test_tools`, `test_memory`, `test_voice_chunker`, `test_voice_queue`, `test_agent_loop`, `test_harness_contract`, `test_pi_events`) | run | run | No device, no network |
-| Integration with fakes (`test_integration`) | run | run | Fake provider/child only |
+| Pure host (`test_bus`, `test_topics`, `test_reasoning`, `test_tools`, `test_memory`, `test_voice_chunker`, `test_voice_queue`, `test_agent_loop`, `test_harness_contract`, `test_harness_native`) | run | run | No device, no network |
+| Integration with fakes (`test_integration`) | run | run | Fake provider only |
 | Optional-dependency tests | skip if missing | skip if missing | Import-guarded |
 | Manual (`mac`/`linux`) | manual | manual | Documented, not in CI |
 | Rig (`rig`) | — | target | Separate job on hardware |

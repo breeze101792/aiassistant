@@ -4,15 +4,15 @@ A voice-first desktop assistant with a native orb UI and a swappable agent
 harness.
 
 You speak; it transcribes, reasons, and answers out loud, while an ambient orb
-shows what it is doing. The reasoning backend is selectable in config: the
-built-in loop with a local model, or the external **pi** coding agent.
+shows what it is doing. The reasoning loop is ours (`native`), behind a harness
+seam open for a future implementation.
 
 - **Voice in, audio out** — speech recognition, streaming text-to-speech, and an
   interrupt that actually stops the audio.
 - **Native orb** — a PySide6/Qt window on macOS and Linux. No browser, no
   terminal as the primary interface.
-- **Swappable harness** — `native` (our loop plus a model provider) or `pi`
-  (an external coding agent over JSONL RPC).
+- **Pluggable harness** — the loop owner is selectable in config; the default and
+  only shipped value is `native` (our loop plus a model provider).
 - **Console fallback** — stays usable headless and in text.
 
 ## Quick start
@@ -60,7 +60,6 @@ Precedence: CLI flag > environment > `config.yaml` > code defaults.
 | Python | 3.11 or newer |
 | OS | macOS or Linux |
 | Model | A local [Ollama](https://ollama.com) model, or an OpenAI-compatible endpoint |
-| Optional | `pi` for the external harness (`./scripts/setup_pi.sh`) |
 
 ```sh
 # The default model, if you do not have it yet
@@ -74,7 +73,7 @@ One file selects every backend: `config.yaml`. See
 
 ```yaml
 agent:
-  harness: native            # native | pi
+  harness: native            # the loop owner
   llm:
     provider: ollama         # ollama | openai
     model: qwen3:latest
@@ -99,34 +98,15 @@ Two independent choices, which are easy to confuse:
 | Model | The weights | `agent.llm.model` |
 | **Agent harness** | Owns the reasoning loop, tool calls, and context | `agent.harness` |
 
-`pi` is a **harness**, not a provider: it runs its own loop and calls its own
-model. Swapping `harness` changes who owns the loop.
-
-To use it:
-
-```sh
-./scripts/setup_pi.sh
-```
-
-```yaml
-agent:
-  harness: pi
-  pi:
-    enabled: true
-    workspace: "~/.config/aiassistant/pi_workspace"
-```
-
-> **Read [docs/security/threat-model.md](docs/security/threat-model.md) first.**
-> pi runs with your permissions and has no permission system of its own. The
-> tool allowlist and workspace guard reduce the blast radius; they are not an OS
-> sandbox.
+A harness is not a provider: it owns the loop. One harness ships (`native`), and
+the seam is open so a future one can be added without code changes.
 
 ## Layout
 
 ```
 src/aiassistant/
   agent/        the turn loop, memory, embeddings, and the harness contract
-    harness/    native (our loop) and pi (external process)
+    harness/    native (our loop); the seam is open for a future harness
   voice/        speech in and out: ASR, TTS, audio device, wake detection
   tools/        tool discovery, built-ins, and skills
   reasoning/    model providers (ollama, openai) with streaming
@@ -146,9 +126,9 @@ The design docs are the reference; start at [docs/README.md](docs/README.md).
 | --- | --- |
 | [requirements/](docs/requirements/) | what it must do, with testable criteria |
 | [architecture/](docs/architecture/) | components, module contracts, decisions |
-| [contracts/](docs/contracts/) | bus topics, the pi protocol, the orb API |
+| [contracts/](docs/contracts/) | bus topics, the harness event contract, the orb API |
 | [testing/](docs/testing/) | test plan and the requirement-to-test trace |
-| [security/](docs/security/) | threat model and the pi confinement story |
+| [security/](docs/security/) | threat model and what is not contained |
 
 ## Tests
 

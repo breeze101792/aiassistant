@@ -1,12 +1,13 @@
 # Feature: Pluggable Agent Harness
 
 **Requirements:** REQ-HARNESS-001..007, REQ-BACKEND-001..002, REQ-TOOL-001..005, REQ-MEM-004.
-**Contract:** [IF-0002 harness interface](../../architecture/modules/agent-harness.md), [IF-0003 pi RPC](../../contracts/protocols.md#if-0003-pi-rpc).
+**Contract:** [IF-0002 harness interface](../../architecture/modules/agent-harness.md).
 
 ## What it does
 
-Lets the **owner of the reasoning loop** be swapped by config, without changing
-the rest of the system.
+Lets the **owner of the reasoning loop** be selected by config, without changing
+the rest of the system. One harness ships today; the seam exists so more can be
+added without touching the callers.
 
 ## The three-layer model
 
@@ -17,26 +18,24 @@ The single most common confusion in this project. See
 | --- | --- | --- |
 | Model provider | Serves an LLM over an API | Ollama, OpenAI |
 | Model | The weights | `qwen3:latest` |
-| **Agent harness** | Owns the loop: prompts the model, parses tool calls, runs them, manages context | `native`, `pi` |
+| **Agent harness** | Owns the loop: prompts the model, parses tool calls, runs them, manages context | `native` (ours) |
 
-pi is a **harness**, not a provider and not an inference engine. It calls its
-own provider, configured in pi's own files. So there are two independent axes:
+A harness is not a provider and not an inference engine. A harness that owned its
+own tools would call its own provider, configured in its own files. So provider
+and harness are independent axes:
 
 ```yaml
-agents:
-  jarvis:
-    harness: native            # who owns the loop
-    llm:                       # used only when harness: native
-      provider: ollama
-      model: qwen3:latest
-    pi:                        # used only when harness: pi
-      workspace: ~/.config/aiassistant/pi_workspace
+agent:
+  harness: native            # who owns the loop
+  llm:                       # used only when harness: native
+    provider: ollama
+    model: qwen3:latest
 ```
 
 ## The contract
 
-Both harnesses implement one interface and emit one event vocabulary, so
-`agent/loop.py`, the orb, and the TTS chunker never branch on which is running:
+Every harness implements one interface and emits one event vocabulary, so the
+agent module, the orb, and the TTS chunker never branch on which is running:
 
 ```python
 class AgentHarness(ABC):
@@ -54,53 +53,64 @@ TurnEvent.kind ∈ {
 }
 ```
 
-## Capability differences
+## Capability reporting
 
-`HarnessCaps` exists because the two harnesses are genuinely not equivalent.
-Reporting the difference is what keeps it honest.
+`HarnessCaps` exists so a harness reports what it owns instead of a caller
+assuming. `native` delegates tools and memory:
 
-| Capability | `native` | `pi` |
-| --- | --- | --- |
-| `owns_tools` | `False` (our `tools/` executes) | `True` (pi executes its own) |
-| `owns_memory` | `False` (we inject context) | `True` (pi holds session context) |
-| `streaming` | `True` | `True` |
-| `cancellable` | `True` | `True` (`clear_queue` + `abort`) |
-| `usage_reporting` | `True` | `True` (`message_update.usage`) |
-| `images` | `False` | `True` (not used in MVP) |
+| Capability | `native` |
+| --- | --- |
+| `owns_tools` | `False` (our `tools/` executes) |
+| `owns_memory` | `False` (we inject context) |
+| `streaming` | `True` |
+| `cancellable` | `True` |
+| `usage_reporting` | `True` |
+| `images` | `False` |
 
-Consequences of `owns_tools = True` for pi turns:
+A harness with `owns_tools = True` would change several things, and the caps flag
+is how the system knows:
 
-- Our tools — including web search — are **not** available on pi turns.
-- Our sandbox and `safe_paths` do **not** apply on pi turns; pi's confinement is
-  its own (see [security/threat-model.md](../../security/threat-model.md)).
-- The tool audit trail comes from pi's `tool_result` events.
+- Our tools — including web search — would not be available on its turns.
+- Our sandbox and `safe_paths` would not apply; its confinement would be its own.
+- Its tool audit trail would come from its own `tool_result` events.
+
+## Selecting a harness
+
+`create_harness` is the single selection point. It reads `agent.harness`
+(default `native`) and fails loudly on an unknown name:
+
+```python
+name = (agent_cfg.get("harness") or NATIVE).strip().lower()
+if name not in SUPPORTED:
+    raise HarnessConfigError(f"Unknown harness {name!r}. Supported: ...")
+```
+
+Adding a harness means implementing `AgentHarness` and adding it to `SUPPORTED`;
+no caller changes.
 
 ## No silent fallback
 
 If the selected harness is unhealthy, the turn fails with a visible error. It
-never silently switches to the other harness: they differ in tool ownership, so
-a silent switch would silently change what the assistant can do
-(REQ-HARNESS-006).
+never silently switches to another: harnesses can differ in tool ownership, so a
+silent switch would silently change what the assistant can do (REQ-HARNESS-006).
 
-## Memory and double-contexting
+## Memory and contexting
 
-pi keeps its own session context. Injecting our memory context into a pi prompt
-would double-context it. Rule:
+Our harness receives injected memory context. A harness that keeps its own
+session context must not also receive ours, or it would be double-contexted:
 
-- **Native turns:** our memory context is injected, as today.
-- **pi turns:** the prompt is the bare user text; pi already has context.
-- **Exception:** after a pi process restart, the first prompt may carry a compact
-  recent-conversation summary so a crash does not erase continuity.
+- **`native` turns:** our memory context is injected, as today.
+- **A context-owning harness:** the prompt would be the bare user text.
 
-A contract test asserts pi prompts contain no memory prefix except that prime.
+No such harness ships, so this is a rule for a future implementation, recorded
+here so it is not rediscovered.
 
 ## Verification
 
 | Clause | Method | Test |
 | --- | --- | --- |
-| Both harnesses satisfy the contract | host (parametrized conformance suite) | T-0301 |
+| Any harness satisfies the contract | host (parametrized conformance suite) | T-0301 |
 | Event vocabulary mapping | host (fixtures) | T-0302 |
 | Cancellation ends the turn as cancelled | host (fake harness) | T-0303 |
 | Unhealthy harness fails, no fallback | host | T-0304 |
-| pi prompt has no memory prefix except after restart | host | T-0305 |
-| malformed pi stdout line does not kill the reader | host (fixture) | T-0306 |
+| An unknown harness name is rejected loudly | host | T-0307 |

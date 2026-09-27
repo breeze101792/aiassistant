@@ -9,7 +9,6 @@ Hardware-facing interfaces that *do* exist are documented instead as:
 | --- | --- |
 | The OS audio device | [IF-0006 audio plane](protocols.md#if-0006-audio-plane) |
 | The local WebSocket transport | [IF-0001 bus bridge](protocols.md#if-0001-bus-websocket-bridge-protocol) |
-| The pi child process | [IF-0003 pi RPC](protocols.md#if-0003-pi-rpc) |
 | On-disk state | [data-model.md](../architecture/data-model.md) |
 
 Note the ID scheme: `ERR-PART-NNN` in the playbook is reserved for **erratum

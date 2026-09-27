@@ -58,15 +58,17 @@ on-target audio rig (loopback or fixture) · `inspection`.
 
 | ID | Requirement | Acceptance criterion | Source | Verify |
 | --- | --- | --- | --- | --- |
-| REQ-HARNESS-001 | Harness is config-swappable. | `agents.<id>.harness` ∈ {`native`, `pi`} selects the loop owner; changing it and restarting changes behavior with no code edit. | [S] | host, mock |
-| REQ-HARNESS-002 | Uniform harness contract. | Both harnesses implement one `AgentHarness` contract and emit one `TurnEvent` vocabulary; capabilities are reported, never silently ignored. | [A] | host (contract test) |
-| REQ-HARNESS-003 | pi over JSONL RPC. | The pi harness launches `pi --mode rpc`, sends a `prompt` with a unique id, streams deltas, and treats `agent_settled` as turn end; a malformed stdout line does not kill the reader. | [S] | host (fake pi), mac |
-| REQ-HARNESS-004 | pi lifecycle safety. | On quit, stdin is closed and the child is reaped; on unexpected exit the turn errors and the orb shows backend-down; no zombie remains. | [A] | host, mac, linux |
-| REQ-HARNESS-005 | Tool ownership is unambiguous. | With `harness: pi`, tool execution happens inside pi and `tools/` is not invoked for that turn; with `native`, `tools/` executes. | [A] | host, inspection |
-| REQ-HARNESS-006 | No silent harness fallback. | An unhealthy harness fails the turn with a clear error; it never silently switches to the other harness. | [A] | host, mock |
+| REQ-HARNESS-001 | Harness is config-selectable. | `agent.harness` selects the loop owner; the default and only shipped value is `native`. An unknown value fails startup, naming the value. | [S] | host |
+| REQ-HARNESS-002 | Uniform harness contract. | Every harness implements one `AgentHarness` contract and emits one `TurnEvent` vocabulary; capabilities are reported through `HarnessCaps`, never silently ignored. | [A] | host (contract test) |
+| REQ-HARNESS-005 | Tool ownership is unambiguous. | `HarnessCaps.owns_tools` reports whether the harness runs its own tools; when `False`, `tools/` executes and the sandbox applies. | [A] | host, inspection |
+| REQ-HARNESS-006 | No silent harness fallback. | An unhealthy or unbuildable harness fails the turn with a clear error; it never silently switches to another harness. | [A] | host, mock |
 | REQ-HARNESS-007 | Harness health is probed. | A probe runs at startup and before a turn; harness-down is shown in the orb and never results in a dropped turn. | [A] | host, mock |
-| REQ-BACKEND-001 | Model provider is config-selectable. | `agents.<id>.llm.provider` ∈ {`ollama`, `openai`} selects the provider for the native harness. | [S] | host, mock |
+| REQ-HARNESS-008 | The harness seam stays open. | A new harness is added by implementing `AgentHarness` and registering it in the factory; no caller, orb, TUI, or test outside the harness package changes. | [S] | host, inspection |
+| REQ-BACKEND-001 | Model provider is config-selectable. | `agent.llm.provider` ∈ {`ollama`, `openai`} selects the provider for the native harness. | [S] | host, mock |
 | REQ-BACKEND-002 | Invalid provider fails clearly. | An unknown provider yields a startup error naming the value and does not start the harness. | [A] | host |
+
+> REQ-HARNESS-003 and REQ-HARNESS-004 described the external pi harness and were
+> withdrawn on 2026-09-27 with it. The numbers are not reused.
 
 ## Tools
 
@@ -85,7 +87,7 @@ on-target audio rig (loopback or fixture) · `inspection`.
 | REQ-MEM-001 | Turns are persisted. | Turns are written to the configured store and re-readable after restart. | [S] | host |
 | REQ-MEM-002 | One writer per turn. | A turn is written by exactly one persistence path; no duplicate write occurs. | [A] | host |
 | REQ-MEM-003 | Resume across restarts. | With `memory.resume_session: true`, a new session includes recent prior turns; with false it starts empty. | [A] | host |
-| REQ-MEM-004 | Memory works with any harness. | Recall and persistence are provided by the app, not the harness, and work with both `native` and `pi`. | [A] | host, mock |
+| REQ-MEM-004 | Memory works with any harness. | Recall and persistence are provided by the app, not the harness, so a harness that reports `owns_memory: False` (our `native`) gets both from us. | [A] | host, mock |
 | REQ-MEM-005 | No secrets in memory. | No API key or token value is written into transcripts or facts. | [A] | host, inspection |
 | REQ-MEM-006 | Embeddings do not block the loop. | Embedding calls run off the event loop or from cache. | [A] | host (loop-yield test) |
 
@@ -125,7 +127,7 @@ on-target audio rig (loopback or fixture) · `inspection`.
 | --- | --- | --- | --- | --- |
 | REQ-PLAT-001 | Runs on macOS and Linux. | Documented install and launch works on both; all MVP features work on both or degrade with a clear message. | [S] | mac, linux |
 | REQ-PLAT-002 | No macOS-only API on the MVP path. | Platform-specific code is isolated behind a documented boundary. | [A] | inspection |
-| REQ-PLAT-003 | Platform requirements documented. | Required system packages (audio, GUI, optional pi runtime) are listed for both OSes. | [A] | inspection |
+| REQ-PLAT-003 | Platform requirements documented. | Required system packages (audio, GUI) are listed for both OSes. | [A] | inspection |
 | REQ-PLAT-004 | No web UI. | No web server or browser is required for the primary UI. | [S] | inspection |
 
 ## Configuration
@@ -180,8 +182,9 @@ capability, so it gets requirements rather than being an untraced orphan.
 | --- | --- | --- | --- | --- |
 | REQ-SEC-001 | The bus is not exposed by default. | The bridge binds loopback unless `bus.bind` explicitly widens it. | [A] | host, inspection |
 | REQ-SEC-002 | A token is required when the bus is reachable. | With a non-loopback bind, a non-empty token is mandatory or startup fails. | [A] | host |
-| REQ-SEC-003 | pi is opt-in. | `agents.<id>.pi.enabled: true` is required; without it the pi harness refuses to start. | [S] | host |
-| REQ-SEC-004 | pi file tools are confined. | The pi tool allowlist excludes shell tools, and the workspace-guard extension blocks tool calls that resolve outside the workspace. | [S] | host (fixture), mac, linux |
-| REQ-SEC-005 | The RPC shell surface is unused. | The host never sends pi's RPC `bash` command. | [A] | inspection |
-| REQ-SEC-006 | The pi child environment is minimal. | The child receives an explicit environment, not an inherited one; env values are never logged. | [A] | host |
-| REQ-SEC-007 | The confinement gap is documented. | `security/threat-model.md` states that network access and prompt injection are not contained at the coding level, and names the OS-level option. | [S] | inspection |
+
+> REQ-SEC-003..007 governed the external pi harness (opt-in, file-tool
+> confinement, RPC shell surface, child environment, and the documented
+> confinement gap) and were withdrawn on 2026-09-27 with it. The numbers are not
+> reused. In-process tool confinement is now covered by REQ-TOOL-* and the
+> sandbox; `REQ-SEC-001/002` remain the boundary that matters.

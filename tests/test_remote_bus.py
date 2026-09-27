@@ -164,8 +164,8 @@ class TestSecurity:
             await server.stop()
 
     def test_non_loopback_bind_requires_a_token(self, bus):
-        """An unauthenticated LAN-reachable bus plus a pi harness is a remote
-        shell (RISK-0001). The server must refuse to start."""
+        """An unauthenticated LAN-reachable bus lets anyone publish input to
+        the agent (RISK-0001). The server must refuse to start."""
         server = RemoteBus(bus, host="0.0.0.0", auth_token="")
         assert server.requires_token is True
         assert server._validate() is False

@@ -7,8 +7,8 @@ real time.
 ## What this is
 
 A voice-first desktop assistant. It listens, transcribes, reasons, speaks, and
-shows an ambient orb. The reasoning backend is selectable: our own loop
-(`native`) or the external **pi** coding agent.
+shows an ambient orb. The reasoning loop is ours (`native`), behind a harness
+seam open for a future implementation.
 
 ## Commands
 
@@ -28,7 +28,7 @@ shows an ambient orb. The reasoning backend is selectable: our own loop
 ```
 src/aiassistant/
   agent/       turn loop, memory, embeddings, policy
-    harness/   base.py (contract), native.py, pi/ (adapter, process, protocol, events)
+    harness/   base.py (contract), native.py; the seam is open for a future harness
   voice/       ASR, TTS, audio device, FSM, chunker, wake
   tools/       discovery, builtin_tools/, skills/
   reasoning/   model providers with streaming
@@ -48,8 +48,8 @@ These are the things that actually bit. They are cheap to re-break.
    a module silently disabled speech.
 
 2. **The harness owns the loop, the provider does not.** `agent.harness`
-   (`native` | `pi`) is who reasons. `agent.llm.provider` is which model serves
-   tokens, and is used only by `native`. `pi` is a harness, not a provider.
+   (`native`) is who reasons. `agent.llm.provider` is which model serves
+   tokens, and is used only by `native`. A harness is not a provider.
 
 3. **Raw audio never crosses the bus.** `bus.publish` is a synchronous dict
    fan-out with no latency bound. PCM stays on the audio threads.
@@ -70,19 +70,10 @@ These are the things that actually bit. They are cheap to re-break.
 7. **Unit tests must not open audio devices.** It segfaults the host audio
    stack. Call `VoiceModule.disable_audio()` first.
 
-8. **pi's `message_end` fires once per role** (system, user, assistant). Only
-   `role: assistant` is the answer. A failed turn arrives as an assistant
-   message with `stopReason: "error"`, not a separate error event.
-
-9. **The bus binds loopback by default and a non-loopback bind requires a
-   token.** With pi enabled, an open bus is a remote shell.
-
-10. **pi is opt-in and confined at the coding level only.** `pi.enabled: true`
-    is required. The tool allowlist excludes shell;
-    `agent/harness/pi/workspace_guard.ts` (shipped as package data, loaded from
-    an absolute path) vetoes out-of-workspace paths, and a missing guard fails
-    startup. Network access and prompt injection are **not** contained. Read
-    `docs/security/threat-model.md`.
+8. **The bus binds loopback by default and a non-loopback bind requires a
+   token.** An open bus is a remote-control path: any client that reaches the
+   port can drive the agent and its tools. The bus boundary is the load-bearing
+   one. Read `docs/security/threat-model.md`.
 
 ## Adding a module
 
@@ -95,11 +86,9 @@ These are the things that actually bit. They are cheap to re-break.
 ## Commits
 
 Do not commit or push unless asked. When asked, inspect `git status` and
-`git diff` first, and stage only intended files. `.config/` and a repo-relative
-`pi_workspace/` are ignored runtime data; pi's default workspace lives under
-`~/.config/aiassistant/`. Defaults live in `config.py` (`DEFAULTS`);
-`config.yaml` is the user's local, git-ignored override and
-`config.example.yaml` is the tracked example.
+`git diff` first, and stage only intended files. `.config/` is ignored runtime
+data. Defaults live in `config.py` (`DEFAULTS`); `config.yaml` is the user's
+local, git-ignored override and `config.example.yaml` is the tracked example.
 
 ## Current state
 
@@ -108,7 +97,6 @@ Refactored and committed in `8b42ab9`. Suite: 441 passed, 5 skipped, 5 failed
 
 Open, and stated as unverified rather than assumed:
 
-- `abort` during a running pi tool; the adapter falls back to process teardown.
 - On-target audio timing; the audio logic is unit tested, not the rig.
 - Voice barge-in is off until acoustic echo cancellation exists
   (`docs/architecture/decisions/ADR-0011`).

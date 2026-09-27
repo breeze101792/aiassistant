@@ -84,8 +84,8 @@
   its own module contract; the dead `status.ears.*` / `status.mouth.error`
   subscriptions are removed. `response.text` stays published for the frozen
   messaging module only.
-- New input channel constant `CHANNEL_TUI`; pi users must add `tui` to
-  `allow_channels` to drive pi from the TUI.
+- New input channel constant `CHANNEL_TUI`; the TUI drives input on the `tui`
+  channel like any other frontend.
 - One residual, accepted risk: if `initscr()` hard-exits, `endwin()` cannot
   run and the terminal may be left on the alternate screen. The parent
   prints the reason after the child dies; the user runs `reset`. This is the

@@ -5,15 +5,16 @@
 
 bus:
   # Loopback by default. Widening this REQUIRES a non-empty remote_auth_token,
-  # or the assistant refuses to start: an unauthenticated reachable bus plus a
-  # pi harness is a remote shell. See docs/security/threat-model.md RISK-0001.
+  # or the assistant refuses to start: an unauthenticated reachable bus lets
+  # anyone publish input to the agent. See docs/security/threat-model.md
+  # RISK-0001.
   bind: "127.0.0.1"
   websocket_port: 8765
   remote_auth_token: ""
 
 agent:
-  # The loop owner: native (our loop) or pi (external agent). See
-  # docs/architecture/decisions/ADR-0004-harness-vs-provider.md
+  # The loop owner: native (our loop). The interface is open, so another
+  # harness could be added. See ADR-0004.
   harness: native
   persona: |
     You are a smart, detail-oriented assistant. Always think step by step.
@@ -25,25 +26,6 @@ agent:
     api_key: ""
     max_tokens: 4096
     temperature: 0.7
-  pi:
-    # pi is a coding agent, not a model provider. It is disabled by default
-    # because it runs with your permissions and has no permission system of its
-    # own. Read docs/security/threat-model.md before enabling it.
-    enabled: false
-    command: "pi"
-    # Runtime data under HOME, so the workspace never moves with the directory
-    # the assistant is launched from (ADR-0016).
-    workspace: "~/.config/aiassistant/pi_workspace"
-    tools: [read, write, edit, grep, find, ls]
-    # "builtin" loads the shipped workspace_guard.ts from the package. Any
-    # other value is a path (absolute recommended; ~ is expanded). A path that
-    # does not exist fails startup rather than silently disabling the guard.
-    # null disables the guard (confined tools become unconfined).
-    policy_extension: "builtin"
-    allow_channels: [console, voice, orb, tui]
-    turn_timeout_s: 300
-    restart_backoff_s: [1, 2, 4, 8, 30]
-    memory_prime_on_start: true
   memory:
     conversations_path: ".config/aiassistant/memory/conversations"
     facts_path: ".config/aiassistant/memory/facts"

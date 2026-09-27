@@ -9,8 +9,8 @@ is the agent's job.
 
 **State it owns:** the tool registry and the sandbox policy.
 
-> Used only when `harness.caps.owns_tools` is false. On pi turns this module is
-> not consulted (REQ-HARNESS-005, [ADR-0008](../decisions/ADR-0008-pi-owns-tools.md)).
+> Used only when `harness.caps.owns_tools` is false. The shipped `native`
+> harness delegates tools, so every turn consults this module (REQ-HARNESS-005).
 
 ## PROVIDES
 
