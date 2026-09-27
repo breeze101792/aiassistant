@@ -175,12 +175,15 @@ cython_debug/
 .config/aiassistant/
 !.config/aiassistant/.gitkeep
 
-# Local config overrides (never commit)
+# Local config. Defaults live in code; config.example.yaml is the tracked
+# example. Copy it to config.yaml and edit only what you change.
+config.yaml
 config.local.yaml
 *.local.*
 
 data
 user_memory.txt
 
-# pi runtime (the child's working directory)
+# pi runtime, when a user configures it repo-relative. The default lives under
+# ~/.config/aiassistant/pi_workspace (ADR-0016).
 pi_workspace/

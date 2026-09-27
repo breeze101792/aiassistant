@@ -8,13 +8,23 @@ IF-0003). Items marked UNVERIFIED there are covered by shape-tolerant tests: a
 change in content-block layout degrades instead of crashing.
 """
 
+import asyncio
 import json
+import os
 
 import pytest
 
 from aiassistant.agent.harness.base import EventKind
 from aiassistant.agent.harness.pi import events as pi_events
-from aiassistant.agent.harness.pi.process import PiProcess, PiProcessConfig
+from aiassistant.agent.harness.pi.process import (
+    BUILTIN_GUARD,
+    DEFAULT_WORKSPACE,
+    PiProcess,
+    PiProcessConfig,
+    packaged_guard_path,
+    resolve_policy_extension,
+    resolve_workspace,
+)
 from aiassistant.agent.harness.pi.protocol import (
     ProtocolError,
     RpcRequest,
@@ -227,16 +237,54 @@ class TestProcessCommand:
         assert "-nc" in argv
 
     def test_argv_loads_only_our_extension(self):
+        """The default config resolves to the packaged guard, an existing file."""
+        p = PiProcess(PiProcessConfig(), on_message=lambda m: None)
+        argv = p.build_argv()
+        guard = argv[argv.index("-e") + 1]
+        assert guard.endswith("workspace_guard.ts")
+        assert os.path.isabs(guard) and os.path.isfile(guard)
+
+    def test_explicit_guard_path_is_made_absolute(self):
         p = PiProcess(
-            PiProcessConfig(policy_extension="./pi_extensions/workspace_guard.ts"),
+            PiProcessConfig(policy_extension="./some/guard.ts"),
             on_message=lambda m: None,
         )
-        argv = p.build_argv()
-        assert argv[argv.index("-e") + 1].endswith("workspace_guard.ts")
+        guard = p.build_argv()[p.build_argv().index("-e") + 1]
+        assert os.path.isabs(guard) and guard.endswith("guard.ts")
 
     def test_no_policy_extension_omits_the_flag(self):
         p = PiProcess(PiProcessConfig(policy_extension=None), on_message=lambda m: None)
         assert "-e" not in p.build_argv()
+
+    def test_guard_path_is_cwd_independent(self, tmp_path, monkeypatch):
+        """The regression this design fixes: a changed CWD used to point -e at
+        a file that did not exist, silently disabling the guard (ADR-0016)."""
+        monkeypatch.chdir(tmp_path)
+        p = PiProcess(PiProcessConfig(), on_message=lambda m: None)
+        guard = p.build_argv()[p.build_argv().index("-e") + 1]
+        assert os.path.isfile(guard)
+
+    def test_start_fails_closed_when_guard_missing(self, monkeypatch):
+        """A missing guard must be a loud startup failure, never a silent -e
+        omission."""
+        monkeypatch.chdir("/tmp")
+        p = PiProcess(
+            PiProcessConfig(command="definitely-not-pi", policy_extension="./no/such/guard.ts"),
+            on_message=lambda m: None,
+        )
+        with pytest.raises(FileNotFoundError, match="guard not found"):
+            asyncio.run(p.start())
+
+    def test_start_warns_when_guard_disabled(self, monkeypatch, caplog):
+        monkeypatch.chdir("/tmp")
+        p = PiProcess(
+            PiProcessConfig(command="definitely-not-pi", policy_extension=None),
+            on_message=lambda m: None,
+        )
+        with caplog.at_level("WARNING"):
+            with pytest.raises(FileNotFoundError):
+                asyncio.run(p.start())
+        assert any("guard is disabled" in r.message for r in caplog.records)
 
     def test_env_is_explicit_not_inherited(self):
         p = PiProcess(PiProcessConfig(), on_message=lambda m: None)
@@ -282,3 +330,49 @@ class TestHarnessConfig:
 
         with pytest.raises(HarnessConfigError, match="cortex"):
             create_harness({"harness": "cortex"})
+
+
+class TestPathResolvers:
+    """Resolution must not depend on the process CWD (ADR-0016)."""
+
+    def test_packaged_guard_is_a_real_file(self):
+        assert os.path.isfile(packaged_guard_path())
+        assert os.path.isabs(packaged_guard_path())
+
+    def test_builtin_sentinel_resolves_to_the_packaged_guard(self):
+        assert resolve_policy_extension(BUILTIN_GUARD) == packaged_guard_path()
+
+    def test_none_stays_none(self):
+        assert resolve_policy_extension(None) is None
+
+    def test_user_path_is_made_absolute(self):
+        resolved = resolve_policy_extension("./guard.ts")
+        assert resolved is not None and os.path.isabs(resolved)
+
+    def test_tilde_is_expanded(self):
+        resolved = resolve_policy_extension("~/guard.ts")
+        assert resolved is not None
+        assert not resolved.startswith("~")
+        assert resolved.endswith("guard.ts")
+
+    def test_workspace_default_is_cwd_independent_and_does_not_create(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.chdir(tmp_path)
+        first = resolve_workspace(DEFAULT_WORKSPACE)
+        monkeypatch.chdir("/tmp")
+        second = resolve_workspace(DEFAULT_WORKSPACE)
+        assert first == second
+        assert not os.path.isdir(first), "resolvers must not create directories"
+
+    def test_adapter_defaults_to_builtin_guard_and_home_workspace(self):
+        from aiassistant.agent.harness.pi.adapter import PiHarness
+
+        harness = PiHarness({"enabled": True})
+        assert harness.cfg.policy_extension == BUILTIN_GUARD
+        assert harness.cfg.workspace == DEFAULT_WORKSPACE
+
+    def test_adapter_null_guard_passes_through_as_disabled(self):
+        from aiassistant.agent.harness.pi.adapter import PiHarness
+
+        harness = PiHarness({"enabled": True, "policy_extension": None})
+        assert harness.cfg.policy_extension is None

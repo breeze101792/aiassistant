@@ -155,3 +155,48 @@ class TestTheme:
     def test_states_are_visually_distinct(self):
         """Each state needs its own hue; the QML layer relies on this."""
         assert len(set(STATE_COLORS.values())) == len(STATE_COLORS)
+
+
+class TestFeedDispatch:
+    """The shared topic→view-model dispatch the GUI and TUI both use.
+
+    One table means the two frontends cannot drift (ADR-0017).
+    """
+
+    def test_feed_maps_each_watched_topic(self):
+        from aiassistant.bus import topics
+        from aiassistant.orb.model import feed
+
+        m = OrbViewModel()
+        feed(m, topics.VOICE_STATE, {"state": "listening"})
+        assert m.state == "listening"
+        feed(m, topics.AGENT_DELTA, {"index": 0, "kind": "text", "text": "hi"})
+        assert m.transcript[-1]["text"] == "hi"
+        feed(m, topics.AGENT_FINAL, {"text": "hi"})
+        assert m.state == "idle"
+        feed(m, topics.STATUS_HARNESS, {"harness": "pi", "model": "m"})
+        assert m.harness == "pi"
+        feed(m, topics.AGENT_TURN_ERROR, {"message": "boom"})
+        assert m.state == "error"
+
+    def test_feed_ignores_unknown_topics(self):
+        from aiassistant.orb.model import feed
+
+        m = OrbViewModel()
+        feed(m, "some.unknown.topic", {"text": "x"})
+        assert m.transcript == []
+
+    def test_importing_the_model_pulls_no_qt(self):
+        """The TUI imports this module; it must stay Qt-free (ADR-0017)."""
+        import subprocess
+        import sys
+
+        code = (
+            "import sys; import aiassistant.orb.model; "
+            "print('PySide6' in sys.modules)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "False"

@@ -30,7 +30,7 @@ agents:
       provider: ollama
       model: qwen3:latest
     pi:                        # used only when harness: pi
-      workspace: ./pi_workspace
+      workspace: ~/.config/aiassistant/pi_workspace
 ```
 
 ## The contract

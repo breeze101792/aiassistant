@@ -187,7 +187,14 @@ Canonical shape is [data-model.md § Config model](../architecture/data-model.md
 this section restates it in full and adds the per-module sections and the legacy
 migration table.
 
-Precedence (REQ-CFG-002): **CLI override > environment > config file > defaults**.
+Precedence (REQ-CFG-002): **CLI override > environment > `config.yaml` > code
+defaults**.
+
+Every default lives in code (`config.py` `DEFAULTS`), so the assistant runs with
+no config file at all. `config.yaml` is optional and local (git-ignored); it is
+deep-merged over the defaults, so it names only the keys that differ.
+`config.example.yaml` is the tracked, commented example and mirrors the defaults
+key for key.
 
 ### `agents:`
 
@@ -209,10 +216,10 @@ shows the canonical block; fields:
 | `agents.<id>.llm.temperature` | float | As-built `config.yaml:18` |
 | `agents.<id>.pi.enabled` | bool | Explicit opt-in (REQ-SEC-003) |
 | `agents.<id>.pi.command` | str | The `pi` binary |
-| `agents.<id>.pi.workspace` | str | Sets the child `cwd` |
+| `agents.<id>.pi.workspace` | str | Child `cwd`; default `~/.config/aiassistant/pi_workspace`. Absolute recommended ([ADR-0016](../architecture/decisions/ADR-0016-pi-paths-cwd-independent.md)) |
 | `agents.<id>.pi.tools` | list[str] | Tool allowlist; no shell |
-| `agents.<id>.pi.policy_extension` | str | Path to `workspace_guard.ts` |
-| `agents.<id>.pi.allow_channels` | list[str] | Channels allowed to reach pi |
+| `agents.<id>.pi.policy_extension` | str \| null | `"builtin"` loads the shipped `workspace_guard.ts`; any other string is a path (`~` expanded; a missing file fails the pi harness; the assistant still starts, without the agent); `null` disables the guard |
+| `agents.<id>.pi.allow_channels` | list[str] | Channels allowed to reach pi; includes `tui` when the terminal frontend should drive pi |
 | `agents.<id>.pi.turn_timeout_s` | int | **The** abort timeout for a pi turn. There is no separate `conversation.turn_timeout_s` for pi — the agent-level timeout is the fallback when this is unset. |
 | `agents.<id>.pi.restart_backoff_s` | list[int] | Backoff schedule |
 | `agents.<id>.pi.memory_prime_on_start` | bool | Post-restart prime (REQ-MEM-004) |
@@ -242,7 +249,7 @@ the reload policy below.
 | `messaging` | `backends` (`[]`), `telegram.token`, `telegram.allowed_users` | Was `chat`; disabled by default |
 | `console` | `prompt` | Was `cli` (`config.yaml:70-72`) |
 | `scheduler` | `storage_path`, `max_pending` | As-built (`config.yaml:34-36`) |
-| `display` | `mode` (`orb`\|`console`), `always_on_top`, `orb_shader`, `reduced_motion`, `geometry` (`x`, `y`, `w`, `h`) | New. `mode: console` suppresses the orb (REQ-CONSOLE-004) |
+| `display` | `mode` (`gui`\|`tui`\|`none`\|`auto`), `always_on_top`, `orb_shader`, `reduced_motion`, `geometry` (`x`, `y`, `w`, `h`) | The frontend: `auto` (the default) shows the GUI orb when a display is available and no visual shell otherwise; `none` is text only (REQ-CONSOLE-004). Legacy `orb`/`ui` alias `gui`, `console` aliases `none`. `AIASSISTANT_DISPLAY_OFF` forces `none` unless the CLI names a frontend (ADR-0017) |
 | `memory` | `resume_session`, `semantic`, `conversations_path`, `facts_path`, `knowledge_path`, `embeddings_db`, `context_max_tokens`, `context_recent_messages` | Semantic recall default off (`scope.md:34`); paths as-built (`config.yaml:19-25`) |
 | `embeddings` | `provider` (`same`\|`ollama`\|`openai`), `model`, `url`, `batch_size` | As-built (`config.yaml:26-30`); `same` reuses the agent's provider |
 | `conversation` | `context_turns`, `busy` (`interrupt`\|`queue`), `turn_timeout_s`, `retry_max` | Turn gating and bounded retries; `turn_timeout_s` is the fallback when a harness-specific timeout is unset |
@@ -254,7 +261,8 @@ A single rule, so "applies now" versus "needs a restart" is never a guess.
 
 | Scope | Applies |
 | --- | --- |
-| `display.mode`, `display.always_on_top`, `display.orb_shader`, `display.reduced_motion` | **Runtime** — the orb reacts on receipt; the assistant publishes the change |
+| `display.mode` | **Restart** — it selects which frontend to spawn |
+| `display.always_on_top`, `display.orb_shader`, `display.reduced_motion` | **Runtime** — the orb reacts on receipt; the assistant publishes the change |
 | `voice.tts.voice`, `voice.tts.speed`, `voice.speak_text_turns` | **Runtime** — read at the next utterance |
 | `voice.listen.mode`, mute | **Runtime** — via `command.voice.*` |
 | `console.prompt`, log level | **Runtime** |

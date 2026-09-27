@@ -309,7 +309,7 @@ verified against `cli.md`; the citation is to that file unless noted. [V]
 
 | Flag | Behavior | Why we use it |
 | --- | --- | --- |
-| `-e`, `--extension <path>` | Loads an extension file or directory; repeatable | Loads `workspace_guard.ts` |
+| `-e`, `--extension <path>` | Loads an extension file or directory; repeatable | Loads the packaged `workspace_guard.ts` (absolute path, [ADR-0016](../architecture/decisions/ADR-0016-pi-paths-cwd-independent.md)) |
 | `-ne`, `--no-extensions` | Disables discovered and configured extensions. **Explicit `-e` paths still load** | Stops the workspace folder injecting its own extension, while still loading ours |
 | `-nc`, `--no-context-files` | Disables `AGENTS.md` and `CLAUDE.md` discovery | Prevents in-folder instruction injection |
 | `-na`, `--no-approve` | Ignores trust-gated project-local configuration and resources for this process | Same; the non-interactive counterpart of `--approve` |

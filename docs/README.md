@@ -27,7 +27,7 @@ line of implementation, per the project design playbook.
 | [requirements/flows.md](requirements/flows.md) | — | as-built | Use cases: trigger, happy path, branches, failure |
 | [requirements/features/](requirements/features/) | — | as-built | One file per feature |
 | [architecture/overview.md](architecture/overview.md) | — | as-built | Components, boundaries, dependency direction |
-| [architecture/modules/](architecture/modules/) | `MOD-0001`..`MOD-0011` | as-built | Per-module PROVIDES/REQUIRES contracts |
+| [architecture/modules/](architecture/modules/) | `MOD-0001`..`MOD-0012` | as-built | Per-module PROVIDES/REQUIRES contracts |
 | [architecture/data-model.md](architecture/data-model.md) | — | as-built | Entities, storage, lifetime |
 | [architecture/decisions/](architecture/decisions/) | `ADR-*` | as-built | Decision log: decision, why, rejected alternatives |
 | [contracts/protocols.md](contracts/protocols.md) | `IF-*` | as-built | Bus topics, pi RPC, audio plane |

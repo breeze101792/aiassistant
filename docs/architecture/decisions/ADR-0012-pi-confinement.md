@@ -13,7 +13,7 @@ Layers, strongest first:
 | # | Layer | Mechanism | Covers |
 | --- | --- | --- | --- |
 | 1 | Tool allowlist | `--tools read,write,edit,grep,find,ls` — no `bash`, no `powershell` | Removes arbitrary program execution |
-| 2 | Policy extension | `pi_extensions/workspace_guard.ts`, a `tool_call` hook returning `{block: true}` | Blocks any file tool path resolving outside the workspace |
+| 2 | Policy extension | `workspace_guard.ts` (shipped as package data, loaded from an absolute path — [ADR-0016](ADR-0016-pi-paths-cwd-independent.md)), a `tool_call` hook returning `{block: true}` | Blocks any file tool path resolving outside the workspace; a missing guard prevents the pi harness from starting |
 | 3 | Process hygiene | `cwd` pinned to the workspace; explicit minimal env; `--no-extensions --no-approve -nc` | Reduces blast radius; stops the folder injecting its own extension |
 | 4 | Host discipline | Never send pi's RPC `bash` command | Closes the RPC shell bypass |
 | 5 | Opt-in | `pi.enabled: true` required; startup logs a warning | No accidental activation |

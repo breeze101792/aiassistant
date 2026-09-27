@@ -25,11 +25,33 @@ built-in loop with a local model, or the external **pi** coding agent.
 starts the assistant.
 
 ```sh
-./start.sh --mode console   # headless
-./start.sh --mode audio     # voice in and out
+./start.sh --frontend none  # text only
+./start.sh --frontend tui   # terminal orb
+./start.sh --audio          # voice in and out
 ./start.sh test             # run the test suite
 ./start.sh -h               # options
 ```
+
+## Your config
+
+Every default lives in code, so the assistant runs with no config file. To
+change something, copy the example and keep only what you want to differ:
+
+```sh
+cp config.example.yaml config.yaml   # config.yaml is git-ignored
+```
+
+```yaml
+# config.yaml — only your overrides
+agent:
+  llm:
+    model: qwen3:latest      # your model
+console:
+  prompt: "you> "
+```
+
+It is deep-merged over the defaults, so anything you omit keeps its default.
+Precedence: CLI flag > environment > `config.yaml` > code defaults.
 
 ## Requirements
 
@@ -91,7 +113,7 @@ agent:
   harness: pi
   pi:
     enabled: true
-    workspace: "./pi_workspace"
+    workspace: "~/.config/aiassistant/pi_workspace"
 ```
 
 > **Read [docs/security/threat-model.md](docs/security/threat-model.md) first.**

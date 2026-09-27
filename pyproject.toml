@@ -34,6 +34,12 @@ aiassistant = "aiassistant.main:cli"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The pi confinement guard is source, not data: it ships with the package and
+# is loaded from an absolute path resolved via importlib.resources. See
+# ADR-0016 and docs/architecture/decisions/ADR-0012-pi-confinement.md.
+[tool.setuptools.package-data]
+"aiassistant.agent.harness.pi" = ["workspace_guard.ts"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "strict"

@@ -90,7 +90,7 @@ crash does not erase continuity (REQ-MEM-004).
 | Layer | Mechanism | Covers |
 | --- | --- | --- |
 | Tool allowlist | `--tools read,write,edit,grep,find,ls` (no shell) | Removes arbitrary execution |
-| Policy extension | `workspace_guard.ts` `tool_call` hook returning `{block: true}` | Blocks paths outside the workspace |
+| Policy extension | `workspace_guard.ts`, shipped as package data and loaded from an absolute path; a missing guard prevents pi from starting | Blocks paths outside the workspace |
 | Process hygiene | `cwd` pin, scrubbed env, `--no-extensions --no-approve -nc` | Reduces blast radius; prevents in-folder injection |
 | RPC shell | **Never sent** by the host | Closes the RPC `bash` bypass |
 
@@ -102,8 +102,8 @@ crash does not erase continuity (REQ-MEM-004).
 
 - `agent/harness` — the interface it implements
 - The `pi` binary, pinned and provisioned (REQ-SEC-003)
-- The workspace directory, for `cwd`
-- The policy extension file, at an absolute path
+- The workspace directory, for `cwd` (default `~/.config/aiassistant/pi_workspace`)
+- The policy extension file, at an absolute path (the packaged guard by default)
 
 It requires **nothing** from `tools/`, `reasoning/`, or `agent/memory`: on pi
 turns those are deliberately out of the path (ADR-0008).

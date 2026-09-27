@@ -49,7 +49,7 @@ are `read`, `bash`, `edit`, `write`.
 | --- | --- |
 | Opt-in | `pi.enabled: true` required; startup warns |
 | No shell | `--tools read,write,edit,grep,find,ls` |
-| Path policy | `workspace_guard.ts` `tool_call` hook returns `{block: true}` for paths outside the workspace |
+| Path policy | `workspace_guard.ts` (packaged, loaded from an absolute path; a missing guard prevents pi from starting) `tool_call` hook returns `{block: true}` for paths outside the workspace |
 | cwd pin | `cwd` = the workspace (sets defaults, not a boundary) |
 | Env scrub | Explicit minimal environment; never logged |
 | RPC discipline | The host never sends pi's `bash` command |

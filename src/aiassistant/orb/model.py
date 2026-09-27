@@ -9,6 +9,8 @@ has not published.
 
 import time
 
+from aiassistant.bus import topics
+
 LEVEL_GATE = 0.02
 LEVEL_GAIN = 2.2
 LEVEL_GAMMA = 0.7
@@ -146,3 +148,25 @@ class OrbViewModel:
         self.transcript.clear()
         self._streaming = None
         self._last_index = None
+
+
+# Topic -> handler. The single dispatch table for a view model, so the GUI orb
+# and the terminal orb cannot drift apart (ADR-0017). The caller owns the
+# transport: after a delta, check ``model.needs_snapshot`` and request one.
+def feed(model: OrbViewModel, topic: str, payload: dict) -> None:
+    """Apply one bus message to a view model."""
+    handler = _FEED_HANDLERS.get(topic)
+    if handler is not None:
+        handler(model, payload)
+
+
+_FEED_HANDLERS = {
+    topics.VOICE_STATE: lambda m, p: m.on_voice_state(p),
+    topics.VOICE_LEVEL: lambda m, p: m.on_level(p),
+    topics.AGENT_DELTA: lambda m, p: m.on_delta(p),
+    topics.AGENT_FINAL: lambda m, p: m.on_final(p),
+    topics.AGENT_TOOL_EVENT: lambda m, p: m.on_tool_event(p),
+    topics.AGENT_TURN_ERROR: lambda m, p: m.on_error(p),
+    topics.STATUS_HARNESS: lambda m, p: m.on_harness(p),
+    topics.AGENT_TRANSCRIPT_SNAPSHOT: lambda m, p: m.on_snapshot(p),
+}

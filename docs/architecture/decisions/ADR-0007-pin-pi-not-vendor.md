@@ -10,7 +10,7 @@ the integration in-tree:
 
 ```
 agent/harness/pi/          our adapter (Python)
-pi_extensions/             our confinement extension (TypeScript)
+agent/harness/pi/workspace_guard.ts   our confinement extension (TypeScript)
 scripts/setup_pi.sh        pinned install
 ```
 

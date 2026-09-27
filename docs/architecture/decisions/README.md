@@ -20,3 +20,5 @@ evidence that forced the choice.
 | [ADR-0013](ADR-0013-pyside6-orb.md) | PySide6 / Qt Quick for the orb | accepted |
 | [ADR-0014](ADR-0014-storage-unchanged.md) | Keep markdown memory and the SQLite cache | accepted |
 | [ADR-0015](ADR-0015-docs-first.md) | Design docs are the gate before implementation | accepted |
+| [ADR-0016](ADR-0016-pi-paths-cwd-independent.md) | Resolve pi's guard and workspace independent of the CWD | accepted |
+| [ADR-0017](ADR-0017-frontend-selection-tui.md) | One frontend selection (`gui\|tui\|none\|auto`); the TUI orb is a separate process | accepted |

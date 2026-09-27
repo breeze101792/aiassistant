@@ -27,11 +27,20 @@ System packages:
 
 ```sh
 python main.py                     # default from config: console + orb
-python main.py --mode console      # force headless
-python main.py --mode audio        # force voice
-python main.py -c my_config.yaml   # alternate config
+python main.py --frontend none     # text only
+python main.py --frontend tui      # terminal orb
+python main.py --audio             # voice backends on
+python main.py -c my_config.yaml   # alternate base config
 python main.py -v                  # debug logging
 ```
+
+## Your config
+
+Every default lives in code, so the assistant runs with no config file.
+`config.example.yaml` documents them; copy it to `config.yaml` (git-ignored) and
+keep only what you change. It is deep-merged over the defaults, so omitted keys
+keep their default. Layers, later winning: code defaults, then `config.yaml`,
+then the environment and CLI flags.
 
 The orb is a separate process:
 
@@ -88,6 +97,6 @@ and are not part of the default run.
 | --- | --- | --- |
 | `ModuleNotFoundError: sounddevice` | PortAudio missing | Install the system package above |
 | No microphone | Device absent or permission denied (macOS) | Grant access in System Settings; the app degrades, it does not crash |
-| orb window does not appear | No display, or Wayland without a compositor supporting it | Run `--mode console`; see the platform caveats in [ui-stack research](../research/ui-stack.md) |
+| orb window does not appear | No display, or Wayland without a compositor supporting it | Run `--frontend none`; see the platform caveats in [ui-stack research](../research/ui-stack.md) |
 | Backend-down in the orb | Harness unhealthy | Check `/status` in the console; see [flows (g)](../requirements/flows.md#g-harness-unavailable--model-down) |
 | pi will not start | `pi.enabled` not set, or the binary is missing | Run `scripts/setup_pi.sh`, then enable it |

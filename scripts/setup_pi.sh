@@ -100,8 +100,11 @@ Next steps:
          harness: pi
          pi:
            enabled: true
-           workspace: "./pi_workspace"
-  3. Read docs/security/threat-model.md — pi runs with your permissions and has
+           workspace: "~/.config/aiassistant/pi_workspace"
+           policy_extension: "builtin"
+  3. If you already had a ./pi_workspace in this repo, move its contents to the
+     path above; the default no longer lives in the project root (ADR-0016).
+  4. Read docs/security/threat-model.md — pi runs with your permissions and has
      no permission system of its own. Our tool allowlist and workspace guard
      reduce the blast radius; they are not an OS sandbox.
 EOF

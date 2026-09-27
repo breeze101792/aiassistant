@@ -99,6 +99,21 @@ Coverage and the reverse T → REQ map: [trace.md](trace.md).
 | T-0903 | Transcript, status, errors render | REQ-CONSOLE-003, REQ-CONV-004 | host | Console with captured stdout | Emit `agent.delta`, `agent.final`, `voice.state`, `agent.turn.error` | Transcript entries, one-line status, and inline errors all render; errors do not block input | console.md Rendering / Errors |
 | T-0904 | Console can be forced | REQ-CONSOLE-004 | mac, linux | GUI available; `display.mode: console` | Launch | Starts headless with no window even though a GUI is present | console.md / REQ-CONSOLE-004 |
 | T-0905 | Streaming render works | REQ-CONSOLE-005 | host | Captured stdout | Emit successive deltas | Text appears incrementally in place; final settles the line | console.md Rendering |
+| T-1201 | Frontend enum and aliases | REQ-FRONTEND-001 | host | — | Resolve `orb`/`ui`/`console` aliases | Map to `gui`/`gui`/`none` | `tests/test_display.py` |
+| T-1202 | Frontend precedence | REQ-FRONTEND-002 | host | CLI + env + config set | Resolve | CLI > env > config > auto | `tests/test_display.py` |
+| T-1203 | auto resolution by host | REQ-FRONTEND-003 | host | Display var set/clear, SSH set | Resolve `auto` | `gui` locally, `none` headless/SSH; never `tui` | `tests/test_display.py` |
+| T-1204 | gui without a display degrades | REQ-FRONTEND-004 | host | No display; `--frontend gui` | `frontend_plan` | Falls to `tui` or `none`, never errors | `tests/test_frontend_plan.py` |
+| T-1205 | TUI is stdlib and display-free | REQ-FRONTEND-005 | host, inspection | Import the package | Import `aiassistant.tui.app` | No PySide6 in `sys.modules`; no new dependency | `tests/test_orb.py` |
+| T-1206 | TUI state and transcript parity | REQ-FRONTEND-006 | host | Same bus sequence | Feed both models | GUI and TUI models agree (shared `feed`) | `tests/test_orb.py` |
+| T-1207 | TUI controls publish the same topics | REQ-FRONTEND-007 | host | Key events | Dispatch keys | Publishes `user.input.text`, `command.*` | `tests/test_tui.py` |
+| T-1208 | TUI preconditions degrade | REQ-FRONTEND-008 | host | Non-tty, `TERM` unset/`dumb` | `tui_available` / `python -m aiassistant.tui` | Reports a reason, exits 3, no curses entered | `tests/test_display.py` |
+| T-1209 | One tty owner | REQ-FRONTEND-009 | host | Console running | `suspend_terminal`/`resume_terminal` | No render while suspended; resumes after | `tests/test_console.py` |
+| T-1210 | audio is not a frontend | REQ-FRONTEND-001, REQ-FRONTEND-012 | host, inspection | — | Inspect the enum and `--audio` | No `audio` frontend value; `--audio` sets voice backends | `tests/test_display.py` |
+| T-1211 | none runs without a visual shell | REQ-FRONTEND-011 | host | `--frontend none` | `frontend_plan` | Spawns nothing; text continues | `tests/test_frontend_plan.py` |
+| T-1301 | Defaults run with no config file | REQ-CFG-007 | host | No `config.yaml` | `load_config()` | Code defaults apply; the app starts | `tests/test_config.py` |
+| T-1302 | Local file overrides only its keys | REQ-CFG-007 | host | A `config.yaml` with one key | `load_config()` | That key changes; every other default is intact | `tests/test_config.py` |
+| T-1303 | Example matches the defaults | REQ-CFG-008 | host | — | Parse both | Same keys and values; no drift | `tests/test_config.py` |
+| T-0907 | Headless autodetect | REQ-CONSOLE-006 | host | No display-server env; `display.mode: auto` | Resolve the display mode | Console is chosen; with a display var set, orb is chosen; `AIASSISTANT_DISPLAY_OFF` forces console; `--mode ui` overrides it | `tests/test_display.py` |
 | T-0906 | `/stop` produces a cancelled turn | REQ-CONV-003, REQ-WAKE-005 | host | Turn in flight | Issue `/stop` | Publishes `command.agent.interrupt`; turn ends cancelled; no final | console.md Commands / flows.md (c) |
 
 ## Scheduler — `tests/test_scheduler.py`

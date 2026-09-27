@@ -61,6 +61,7 @@ MESSAGING_RESPONSE = "response.text"
 # were previously magic strings (for example, whether to speak a response).
 CHANNEL_VOICE = "voice"
 CHANNEL_ORB = "orb"
+CHANNEL_TUI = "tui"
 CHANNEL_CONSOLE = "console"
 CHANNEL_SCHEDULE = "schedule"
 CHANNEL_MESSAGING = "messaging"

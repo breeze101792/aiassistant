@@ -17,7 +17,7 @@ from aiassistant.orb.model import OrbViewModel
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="AI Assistant orb UI")
     parser.add_argument("-c", "--config", default="config.yaml",
-                        help="Config file path (default: config.yaml)")
+                        help="Local config file (default: config.yaml; optional)")
     parser.add_argument("--url", default=None,
                         help="Override the bus WebSocket URL")
     parser.add_argument("--no-on-top", action="store_true",
@@ -29,16 +29,15 @@ def parse_args(argv=None):
 def load_orb_config(path: str, url_override: str | None, no_on_top: bool) -> OrbConfig:
     """Read only the keys the orb needs.
 
-    Deliberately avoids importing the assistant's config machinery: this process
-    has no business loading the whole application configuration, and keeping it
-    narrow means a config error elsewhere cannot stop the UI.
+    Deliberately avoids the assistant's full config machinery: this process has
+    no business loading the whole application configuration, and keeping it
+    narrow means a config error elsewhere cannot stop the UI. It uses the same
+    defaults-plus-local loader, so a bus port set in config.yaml reaches it.
     """
+    from aiassistant.config import load_config
+
     try:
-        import yaml
-        with open(path) as handle:
-            raw = yaml.safe_load(handle) or {}
-    except FileNotFoundError:
-        raw = {}
+        raw = load_config(path)
     except Exception:
         raw = {}
 

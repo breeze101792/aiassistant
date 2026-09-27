@@ -105,6 +105,19 @@ All 80 requirements from
 | REQ-CONSOLE-003 | verified | T-0903 | host |
 | REQ-CONSOLE-004 | verified | T-0904 | mac, linux |
 | REQ-CONSOLE-005 | verified | T-0905 | host |
+| REQ-CONSOLE-006 | verified | T-0907 | host |
+| REQ-FRONTEND-001 | verified | T-1201, T-1210 | host |
+| REQ-FRONTEND-002 | verified | T-1202 | host |
+| REQ-FRONTEND-003 | verified | T-1203 | host |
+| REQ-FRONTEND-004 | verified | T-1204 | host |
+| REQ-FRONTEND-005 | verified | T-1205 | host, inspection |
+| REQ-FRONTEND-006 | verified | T-1206 | host |
+| REQ-FRONTEND-007 | verified | T-1207 | host |
+| REQ-FRONTEND-008 | verified | T-1208 | host |
+| REQ-FRONTEND-009 | verified | T-1209 | host |
+| REQ-FRONTEND-010 | verified | T-1204, T-1208 | host |
+| REQ-FRONTEND-011 | verified | T-1211 | host |
+| REQ-FRONTEND-012 | verified | T-1210 | host |
 
 ### Cross-platform
 
@@ -120,7 +133,9 @@ All 80 requirements from
 | REQ | Status | Proving T | Method |
 | --- | --- | --- | --- |
 | REQ-CFG-001 | **unverified — no config-selects-all-backends case** | — | — |
-| REQ-CFG-002 | **unverified — precedence chain not tested** | — | — |
+| REQ-CFG-002 | **partially verified** — CLI/env layering tested (T-1212); full chain unverified | T-1212 | host |
+| REQ-CFG-007 | verified | T-1301, T-1302 | host |
+| REQ-CFG-008 | verified | T-1303 | host |
 | REQ-CFG-003 | **unverified — invalid-key error not tested** | — | — |
 | REQ-CFG-004 | **unverified — legacy-key migration not tested** | — | — |
 | REQ-CFG-005 | **unverified — no-secrets-in-config is an inspection claim; no T asserts it** | — | — |
@@ -232,6 +247,21 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 | T-0904 | Console can be forced | REQ-CONSOLE-004 |
 | T-0905 | Streaming render works | REQ-CONSOLE-005 |
 | T-0906 | `/stop` produces a cancelled turn | REQ-CONV-003, REQ-WAKE-005 |
+| T-0907 | Headless autodetect | REQ-CONSOLE-006 |
+| T-1201 | Frontend enum and aliases | REQ-FRONTEND-001 |
+| T-1202 | Frontend precedence | REQ-FRONTEND-002 |
+| T-1203 | auto resolution by host | REQ-FRONTEND-003 |
+| T-1204 | gui without a display degrades | REQ-FRONTEND-004, REQ-FRONTEND-010 |
+| T-1205 | TUI is stdlib and display-free | REQ-FRONTEND-005 |
+| T-1206 | TUI state and transcript parity | REQ-FRONTEND-006 |
+| T-1207 | TUI controls publish the same topics | REQ-FRONTEND-007 |
+| T-1208 | TUI preconditions degrade | REQ-FRONTEND-008, REQ-FRONTEND-010 |
+| T-1209 | One tty owner | REQ-FRONTEND-009 |
+| T-1210 | audio is not a frontend | REQ-FRONTEND-001, REQ-FRONTEND-012 |
+| T-1211 | none runs without a visual shell | REQ-FRONTEND-011 |
+| T-1301 | Defaults run with no config file | REQ-CFG-007 |
+| T-1302 | Local file overrides only its keys | REQ-CFG-007 |
+| T-1303 | Example matches the defaults | REQ-CFG-008 |
 | T-1001 | Add, list, delete round-trip | REQ-SCHED-001 |
 | T-1002 | Due task publishes once | REQ-SCHED-002 |
 | T-1003 | Recurring task re-arms future | REQ-SCHED-003 |

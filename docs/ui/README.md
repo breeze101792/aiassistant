@@ -30,6 +30,7 @@ confirms it yet.
 | [components/controls.md](components/controls.md) | Mute, stop, badge, settings, quit | draft |
 | [implementation-qt.md](implementation-qt.md) | Qt modules, qsb, event bridge, perf | draft |
 | [mockup.html](mockup.html) | Self-contained reference mockup | draft |
+| [tui/](tui/README.md) | The terminal orb: same information and states, adapted to text | draft |
 
 ## What this designs against
 

@@ -300,6 +300,154 @@ Stated per change, never assumed.
 | 6 | fake-bridge host tests plus manual on both OSes |
 | 7 | full suite on both OSes, manual acceptance criteria |
 
+## Round 2 — headless UI toggle and pi path relocation (2026-09-27)
+
+Work that came after the refactor: make the assistant usable on a machine with
+no display, and fix the pi confinement path bug found while doing it.
+
+### Headless UI toggle (REQ-CONSOLE-006)
+
+`display.mode` gained `auto` (now the default): the orb is shown only when a
+display server is available, so a headless machine starts clean with no config
+edit. `AIASSISTANT_DISPLAY_OFF` forces the console; an explicit `--mode ui` or
+`--mode console` outranks it, matching the documented precedence (REQ-CFG-002).
+Only Linux is probed for `DISPLAY`/`WAYLAND_DISPLAY`: macOS Aqua exports
+neither, so probing it would wrongly force a Mac desktop headless.
+
+| File | Change |
+| --- | --- |
+| `config.py` | `gui_available()`, `resolve_display_mode()` with CLI choice |
+| `main.py` | `--mode ui`/`--mode console` passed as a display choice, not a config override |
+| `config.yaml` | `display.mode` default `orb` → `auto` |
+| `tests/test_display.py` | 20 cases: detection, auto, precedence, override |
+
+### pi path relocation (ADR-0016)
+
+`pi_extensions/workspace_guard.ts` and `pi_workspace/` were resolved against the
+process CWD. Launched outside the repo root, `-e` pointed at a missing file, so
+pi loaded **no** extension and the workspace guard was silently off. The adapter
+also read `policy_extension` with no default, so an omitted key disabled the
+guard.
+
+| Change | Detail |
+| --- | --- |
+| Guard is package data | Moved to `agent/harness/pi/workspace_guard.ts`, shipped via `[tool.setuptools.package-data]`, resolved with `importlib.resources` |
+| Workspace anchored | Default `~/.config/aiassistant/pi_workspace`, so it never moves with the CWD |
+| Fail closed | `start()` verifies the guard file before the binary and raises if missing; `null` logs a loud warning |
+| Guard internals | `realpathSync` before the prefix check (symlink escape) and `continue` not `return` in the allow-dir branch (multi-arg tools) |
+
+### Verification this round
+
+- Full suite: **360 passed, 5 skipped**, 5 failed. The 5 failures are
+  environment-only and predate this round: two integration tests need a running
+  Ollama; three `test_voice_asr` tests need `pkg_resources` and a Nix
+  `libstdc++` on the test interpreter. Baseline before the round was 344 passed.
+- Guard logic exercised under Node 24 (type-stripping): path-inside/outside,
+  the `-evil` boundary, a symlink escape, and a `find` call whose `cwd` is
+  outside all pass.
+- Wheel contains `workspace_guard.ts` with both guard fixes.
+- Live repro from `/tmp`: `-e` now resolves to a real file and the workspace to
+  `~/.config/aiassistant/pi_workspace`; a missing guard raises, a disabled guard
+  warns.
+- Unverified: the on-target orb on a real macOS/Linux desktop (no display on the
+  build machine), and frozen-build resource extraction.
+
+## Round 3 — one frontend selection and the TUI orb (2026-09-27)
+
+The user asked for a TUI orb for hosts with no display server, and a way to
+choose `tui` or `gui` explicitly. Their directive defined the model: **`mode`
+selects only the visual shell; text and audio are always-available
+capabilities.** See [ADR-0017](docs/architecture/decisions/ADR-0017-frontend-selection-tui.md)
+and [frontends.md](docs/requirements/features/frontends.md).
+
+### The model
+
+| Concern | Before | After |
+| --- | --- | --- |
+| Selection | `display.mode: orb\|console\|auto` | `gui\|tui\|none\|auto` (`orb`/`ui`→`gui`, `console`→`none`) |
+| CLI | `--mode {console,audio,ui,auto}` | `--frontend {gui,tui,none,auto}`; `--mode` a hidden deprecated alias |
+| `audio` | a `--mode` value | the `--audio` voice preset; not a frontend |
+| `auto` | orb when a display exists | `gui` when a display exists, else `none`; never `tui` |
+
+`auto` resolution now checks display variables first, then `SSH_CONNECTION`/
+`SSH_TTY`, then platform — closing the gap where a macOS SSH session wrongly
+reported a GUI and the orb failed three times.
+
+### The TUI orb
+
+A separate process (`python -m aiassistant.tui`), stdlib `curses` only, reusing
+`OrbViewModel` and `bridge.Bridge`. It renders the same state, transcript, and
+controls as the GUI orb via a new shared `feed(model, topic, payload)` dispatch,
+so the two frontends cannot drift. Terminal preconditions are checked **before**
+`curses.initscr()` (a failed `initscr` can exit the interpreter); the parent
+yields the tty to the TUI and reclaims it when the TUI exits.
+
+### Console fixes found while building this
+
+The console was subscribed to topics nothing publishes:
+`status.ears.listening/processing/transcribed/error` and `status.mouth.error`.
+Its status handlers never ran, and it never subscribed to `agent.delta`, so
+"text is always available" was partly false and REQ-CONSOLE-005 was unmet. It
+now subscribes to `voice.state`, `voice.transcribed`, `agent.delta`,
+`agent.final`, and `agent.turn.error`, and renders deltas incrementally.
+
+### Review findings fixed before this landed
+
+An adversarial review of the first draft found real defects, all fixed:
+
+| Finding | Fix |
+| --- | --- |
+| A clean frontend exit (code 0) was treated as a crash, so `Ctrl+D` could not quit the TUI | A clean exit releases the tty and does not respawn |
+| Restart counter reset on respawn and a new watcher scheduled per spawn | One watcher owns respawns; the counter resets only on the initial spawn |
+| A failed TUI spawn left the console suspended forever | The spawn failure resumes the terminal |
+| A delta gap made the GUI orb re-request a snapshot on every message | The snapshot request is gated to `agent.delta`, as before |
+| The TUI double-subscribed on reconnect | Subscribe only on the first connect; the bridge replays its own |
+| The TUI child was spawned with `stdout=DEVNULL`, so it always exited 3 (found by a pty test) | The TUI inherits the terminal; the GUI orb does not |
+
+### Verification this round
+
+- Full suite: **423 passed, 5 skipped**, 5 failed. The 5 failures are the same
+  environment-only ones (no Ollama; missing `pkg_resources`). Baseline before
+  round 3 was 413 passed.
+- Supervised live under a pty: `--frontend tui` spawns the TUI, it registers with
+  the bus, `Ctrl+D` exits 0, the parent does not respawn it, and the console
+  resumes.
+- `--frontend gui` with no display and no tty degrades loudly to text-only and
+  keeps running.
+- `--frontend none` starts no visual shell; all modules still start.
+- Unverified: the TUI's visual rendering and resize on a real human terminal
+  (only a pty was used here), and the GUI orb on a desktop with a display.
+
+## Round 4 — defaults in code, config.yaml is the local override (2026-09-27)
+
+Config model change. The first attempt (an auto-created
+`~/.config/aiassistant/config.yaml`) was rejected: defaults should live in code,
+and `~/.config` should not be set up. The final model:
+
+| Layer | Path | Role |
+| --- | --- | --- |
+| Code defaults | `config.py` `DEFAULTS` | The single source of truth; the app runs on these alone. |
+| Local override | `config.yaml` (`-c`) | Optional, git-ignored; deep-merged over the defaults. |
+| Example | `config.example.yaml` | Tracked, commented copy of the defaults. |
+
+`load_config` deep-copies `DEFAULTS`, then merges the local file over it, so it
+names only what changes. No file is created anywhere; no `~/.config` setup.
+Precedence: CLI > environment > `config.yaml` > code defaults.
+The orb and TUI read the same loader, so a bus port set in `config.yaml`
+reaches them.
+
+### Verification this round
+
+- `load_config()` with no `config.yaml` returns the code defaults, and a full
+  live run starts and serves the console on defaults alone.
+- A local file overrides only the keys it names; the rest keep their defaults.
+- Fix found by the tests: an initial shallow copy let a local override mutate
+  the global `DEFAULTS`; `load_config` now deep-copies.
+- Tests: `tests/test_config.py` (14 cases) including a guard that
+  `config.example.yaml` matches `DEFAULTS` key for key, so the example cannot
+  drift into a lie (REQ-CFG-008). Full suite: **437 passed, 5 skipped**, 5
+  failed (the same environment-only failures).
+
 ## Open questions
 
 Each with the default taken unless the user says otherwise.

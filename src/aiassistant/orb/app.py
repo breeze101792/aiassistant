@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from aiassistant.bus import topics
 from aiassistant.bridge import DEFAULT_URL
 from aiassistant.orb import theme
-from aiassistant.orb.model import OrbViewModel
+from aiassistant.orb.model import OrbViewModel, feed
 
 logger = logging.getLogger(__name__)
 
@@ -240,24 +240,11 @@ class OrbWindow(QWidget):
         if not topic:
             return
 
-        if topic == topics.VOICE_STATE:
-            self.model.on_voice_state(payload)
-        elif topic == topics.VOICE_LEVEL:
-            self.model.on_level(payload)
-        elif topic == topics.AGENT_DELTA:
-            self.model.on_delta(payload)
-            if self.model.needs_snapshot:
-                self._request_snapshot()
-        elif topic == topics.AGENT_FINAL:
-            self.model.on_final(payload)
-        elif topic == topics.AGENT_TOOL_EVENT:
-            self.model.on_tool_event(payload)
-        elif topic == topics.AGENT_TURN_ERROR:
-            self.model.on_error(payload)
-        elif topic == topics.STATUS_HARNESS:
-            self.model.on_harness(payload)
-        elif topic == topics.AGENT_TRANSCRIPT_SNAPSHOT:
-            self.model.on_snapshot(payload)
+        feed(self.model, topic, payload)
+        # Only a gap in the delta stream means the transcript is incomplete; other
+        # topics (voice.level at 20 Hz) must not re-request the snapshot.
+        if topic == topics.AGENT_DELTA and self.model.needs_snapshot:
+            self._request_snapshot()
 
     def _request_snapshot(self) -> None:
         """Ask for the transcript after a gap, rather than rendering a hole."""

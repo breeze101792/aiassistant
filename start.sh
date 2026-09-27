@@ -4,9 +4,10 @@
 # Sets up the environment if needed, then starts the assistant.
 #
 # Usage:
-#   ./start.sh                  # start with config.yaml
-#   ./start.sh --mode console   # force headless
-#   ./start.sh --mode audio     # force voice
+#   ./start.sh                  # run with the code defaults
+#   ./start.sh --frontend none  # text only
+#   ./start.sh --frontend tui   # terminal orb
+#   ./start.sh --audio          # force voice
 #   ./start.sh test             # run the test suite
 #   ./start.sh -h               # show assistant help
 #

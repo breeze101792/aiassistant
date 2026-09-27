@@ -74,7 +74,7 @@ what:
 
 | Question | Answer |
 | --- | --- |
-| Who spawns the orb? | `main.py`, as a child process, after `status.assistant.ready` is published, **unless** `display.mode: console` (REQ-CONSOLE-004) |
+| Who spawns the orb? | `main.py`, as a child process, after `status.assistant.ready` is published, unless `display.mode` resolves to `console` (REQ-CONSOLE-004). `auto` resolves to the orb when a GUI is available, console otherwise |
 | What is the command? | `sys.executable -m orb` — the same interpreter and venv, so PySide6 resolution matches |
 | Is spawning synchronous? | No. It is fire-and-forget; a failure to spawn must not block the assistant |
 | Who restarts it on crash? | `main.py`, bounded: max 3 restarts in 10 minutes with backoff `[1, 2, 5]s`, then it stops trying and logs a warning. This mirrors the pi child policy. |
@@ -98,5 +98,5 @@ starting it changes nothing except the UI.
 | Interrupt publishes the command | host | T-0204 |
 | Reconnect resyncs without duplicates | host | T-0205 |
 | Reduced motion disables animation | manual, inspection | T-0206 |
-| `display.mode: console` suppresses the orb | host | T-0904 |
+| `display.mode` resolves to `none` suppresses the orb | host | T-0904 |
 | A crash does not take down the assistant | host (kill child) | T-0207 |

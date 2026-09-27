@@ -41,9 +41,23 @@ function expandHome(p: string): string {
     return p;
 }
 
+/** Resolve symlinks, tolerating a path that does not exist yet (a new file). */
+function realpathOrSelf(p: string): string {
+    try {
+        return fs.realpathSync(p);
+    } catch {
+        try {
+            return path.join(fs.realpathSync(path.dirname(p)), path.basename(p));
+        } catch {
+            return p;
+        }
+    }
+}
+
 function isInsideWorkspace(target: string, workspace: string): boolean {
-    const resolved = path.resolve(workspace, expandHome(target));
-    const root = path.resolve(workspace);
+    // Resolve symlinks so a link inside the workspace cannot point outside it.
+    const resolved = realpathOrSelf(path.resolve(workspace, expandHome(target)));
+    const root = realpathOrSelf(path.resolve(workspace));
 
     // A shared separator boundary, so /work-evil does not pass as inside /work.
     if (resolved === root) return true;
@@ -64,11 +78,12 @@ export default function workspaceGuard(pi: any): void {
             if (typeof value !== "string" || value.length === 0) continue;
 
             const expanded = expandHome(value);
-            const fromHome = expandHome("~/");
-            if (ALLOWED_PREFIXES.some((p) => path.resolve(expandHome(p)) === path.resolve(expanded))) {
-                return;
-            }
-            void fromHome;
+            // pi's own agent dir is not restricted; continue so a multi-argument
+            // tool (find/grep carry both path and cwd) still checks its other args.
+            const inAgentDir = ALLOWED_PREFIXES.some(
+                (p) => path.resolve(expandHome(p)) === path.resolve(expanded)
+            );
+            if (inAgentDir) continue;
 
             if (!isInsideWorkspace(value, workspace)) {
                 return {

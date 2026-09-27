@@ -5,20 +5,32 @@ Usage:
   start.sh [options]                # recommended launcher (sets up the venv)
 
 Options:
-  -c, --config PATH   Config file path (default: config.yaml)
+  -c, --config PATH   Local config file (default: config.yaml, optional).
+                      Defaults live in code; the file overrides only the keys it
+                      names. See config.example.yaml.
   -v, --verbose       Enable debug logging (default: warnings only)
-  --mode MODE         Interface mode: console | audio | ui | auto (default: auto)
+  --frontend SHELL    Visual shell: gui | tui | none | auto (default: auto).
+                      auto uses gui when a display is available, none otherwise.
+                      Text and audio always run; none means text only.
+  --audio             Use the voice backends (speech in and out)
   -h, --help          Show this help and exit
 
 Examples:
-  ./start.sh                        # start with config.yaml
-  ./start.sh --mode console         # headless
-  ./start.sh --mode audio           # voice in and out
+  ./start.sh                        # run with the code defaults
+  ./start.sh -c config.yaml         # apply your local overrides
+  ./start.sh --frontend none        # text only
+  ./start.sh --frontend tui         # terminal orb
+  ./start.sh --audio                # voice in and out
   ./start.sh -v                     # debug logging
 
+Environment:
+  AIASSISTANT_DISPLAY_OFF=1  force the none frontend without a config edit
+
 Config:
-  config.yaml controls every module. See docs/contracts/schemas.md for the
-  full key reference. Set a backend to "stub" to run without that hardware.
+  Every default lives in code, so the assistant runs with no config file.
+  config.example.yaml documents them; copy it to config.yaml (git-ignored) and
+  keep only what you change. Precedence: CLI > environment > config.yaml >
+  code defaults. See docs/contracts/schemas.md for the full key reference.
 
   Key sections:
     agent        — persona, model provider, memory, embeddings
@@ -26,6 +38,7 @@ Config:
     tools        — tool packages, sandbox, timeout
     scheduler    — timed tasks
     console      — terminal interface
+    display      — frontend selection (gui/tui/none/auto)
     bus          — bind address, port, auth token
 """
 
@@ -34,13 +47,21 @@ import asyncio
 import logging
 import signal
 import sys
-import yaml
+from typing import Any
 
 from aiassistant.bus import topics
 from aiassistant.bus.bus import MessageBus
 from aiassistant.bus.remote import RemoteBus
-from aiassistant.config import apply_overrides, migrate_legacy
-
+from aiassistant.config import (
+    FRONTEND_GUI,
+    FRONTEND_NONE,
+    FRONTEND_TUI,
+    apply_overrides,
+    gui_available,
+    load_config,
+    resolve_frontend,
+    tui_available,
+)
 # ── Colored Logging ─────────────────────────────────────────────
 
 COLORS = {
@@ -77,20 +98,43 @@ MODULE_SPECS = [
 
 NON_CRITICAL = {"voice", "vision", "messaging", "tools", "console"}
 
-# The orb is a separate process; restart it bounded, then give up quietly.
-ORB_MAX_RESTARTS = 3
-ORB_RESTART_DELAY_S = 2.0
+# A visual frontend is a separate process; restart it bounded, then give up
+# quietly. A child that dies within the startup grace is not retried: the host
+# cannot run it, so retrying three times only delays the fallback.
+FRONTEND_MAX_RESTARTS = 3
+FRONTEND_RESTART_DELAY_S = 2.0
+FRONTEND_STARTUP_GRACE_S = 5.0
 
 
-def load_config(path: str) -> dict:
-    """Read the config file and migrate any legacy keys (REQ-CFG-004)."""
-    try:
-        with open(path) as f:
-            raw = yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        logger.warning(f"Config not found: {path}, using defaults")
-        raw = {}
-    return migrate_legacy(raw)
+def frontend_plan(frontend: str, tui_ok: bool) -> tuple[str, str]:
+    """Decide what to spawn and why, without spawning anything.
+
+    Returns ``(kind, note)`` where kind is ``gui``, ``tui``, or ``none``. An
+    explicit ``gui`` that cannot be shown degrades to the TUI when a terminal is
+    usable, else to text-only, so the assistant always runs (REQ-FRONTEND-004).
+    Pure, so the decision is unit-testable without a display or a terminal.
+    """
+    if frontend == FRONTEND_GUI:
+        if gui_available():
+            return FRONTEND_GUI, ""
+        if tui_ok:
+            return FRONTEND_TUI, "no display server; using the terminal UI"
+        return FRONTEND_NONE, "no display server and no usable terminal; text only"
+    if frontend == FRONTEND_TUI:
+        if tui_ok:
+            return FRONTEND_TUI, ""
+        return FRONTEND_NONE, "no usable terminal; text only"
+    return FRONTEND_NONE, ""
+
+
+def frontend_inherits_terminal(kind: str) -> bool:
+    """Whether a frontend child must inherit this process's stdin/stdout.
+
+    The TUI draws on the terminal, so a piped stdout makes it report "not a
+    terminal" and exit. The GUI orb opens its own window and does not touch the
+    terminal, so its output is discarded.
+    """
+    return kind == FRONTEND_TUI
 
 
 def import_module_class(module_path: str, class_name: str):
@@ -100,17 +144,20 @@ def import_module_class(module_path: str, class_name: str):
 
 
 class AssistantRunner:
-    def __init__(self, config_path: str = "config.yaml", config_overrides: dict | None = None):
+    def __init__(self, config_path: str = "config.yaml", config_overrides: dict | None = None,
+                 display_choice: str | None = None):
         self.config = load_config(config_path)
         if config_overrides:
             apply_overrides(self.config, config_overrides)
         self._config_path = config_path
+        self._display_choice = display_choice
         self.bus = MessageBus()
-        self.modules: dict[str, object] = {}
+        self.modules: dict[str, Any] = {}
         self.remote_bus: RemoteBus | None = None
         self._shutdown_event = asyncio.Event()
-        self._orb_process = None
-        self._orb_restarts = 0
+        self._frontend: str = FRONTEND_NONE
+        self._frontend_process = None
+        self._frontend_restarts = 0
         self._shutting_down = False
 
     async def start(self):
@@ -169,66 +216,140 @@ class AssistantRunner:
         # Launch the orb unless console mode is configured. A GUI failure must
         # not stop the assistant: console is the permanent fallback
         # (REQ-CONSOLE-001).
-        await self._maybe_start_orb()
+        await self._maybe_start_frontend()
 
         # Wait for shutdown
         await self._shutdown_event.wait()
 
-    async def _maybe_start_orb(self) -> None:
-        """Spawn the orb process, if the display mode calls for one."""
-        display = self.config.get("display", {})
-        mode = display.get("mode", "orb")
-        if mode == "console":
-            logger.info("Display mode is console; not starting the orb")
-            return
+    async def _maybe_start_frontend(self) -> None:
+        """Spawn the chosen visual frontend, if any.
 
-        try:
-            import importlib.util
-            if importlib.util.find_spec("PySide6") is None:
+        Text (the console) and audio always run; this only starts the extra
+        visual shell (ADR-0017). A frontend failure must never stop the
+        assistant, so every path here degrades (REQ-CONSOLE-001).
+        """
+        frontend = resolve_frontend(self.config, cli_choice=self._display_choice)
+        tui_ok, tui_reason = tui_available()
+        self._frontend, note = frontend_plan(frontend, tui_ok)
+        if note:
+            logger.warning("Frontend %r: %s", frontend, note)
+
+        if self._frontend == FRONTEND_GUI:
+            if not self._pyside_available():
                 logger.warning(
-                    "PySide6 is not installed; running without the orb. "
+                    "PySide6 is not installed; not starting the orb. "
                     "Install it with: pip install 'aiassistant[ui]'"
                 )
+                self._frontend, note = frontend_plan(FRONTEND_TUI, tui_ok)
+                if note:
+                    logger.warning("%s", note)
+            else:
+                if await self._spawn_frontend(FRONTEND_GUI, ("aiassistant.orb",),
+                                              initial=True):
+                    asyncio.ensure_future(self._watch_frontend(FRONTEND_GUI))
                 return
-        except Exception:
-            return
 
+        if self._frontend == FRONTEND_TUI:
+            if not tui_ok:
+                logger.warning("Terminal UI unavailable: %s", tui_reason)
+                self._frontend = FRONTEND_NONE
+                return
+            # The TUI owns the tty, so yield it before the child starts. A spawn
+            # failure resumes it again in _spawn_frontend.
+            console = self.modules.get("console")
+            if console is not None:
+                console.suspend_terminal()
+            if await self._spawn_frontend(FRONTEND_TUI, ("aiassistant.tui",),
+                                          initial=True):
+                asyncio.ensure_future(self._watch_frontend(FRONTEND_TUI))
+
+    @staticmethod
+    def _pyside_available() -> bool:
         try:
-            self._orb_process = await asyncio.create_subprocess_exec(
-                sys.executable, "-m", "aiassistant.orb",
-                "-c", self._config_path,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            self._orb_restarts = 0
-            logger.info("Orb started (pid=%s)", self._orb_process.pid)
-            asyncio.ensure_future(self._watch_orb())
-        except Exception as exc:
-            logger.warning("Could not start the orb: %s", exc)
+            import importlib.util
+            return importlib.util.find_spec("PySide6") is not None
+        except Exception:
+            return False
 
-    async def _watch_orb(self) -> None:
-        """Restart the orb if it dies, bounded, then give up quietly.
+    async def _spawn_frontend(self, kind: str, argv: tuple[str, ...], *, initial: bool) -> bool:
+        """Spawn a frontend child. Returns False if it could not be started.
 
-        The orb holds no state the assistant needs, so a crash changes nothing
-        except the UI (REQ-ORB-001).
+        Only the initial spawn resets the restart counter; a respawn from
+        ``_watch_frontend`` keeps it, so the restart budget is real.
         """
-        while self._orb_process is not None:
-            code = await self._orb_process.wait()
+        try:
+            if frontend_inherits_terminal(kind):
+                self._frontend_process = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", *argv, "-c", self._config_path,
+                )
+            else:
+                self._frontend_process = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", *argv, "-c", self._config_path,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+        except Exception as exc:
+            logger.warning("Could not start the %s frontend: %s", kind, exc)
+            self._frontend = FRONTEND_NONE
+            self._release_terminal(kind)
+            return False
+        if initial:
+            self._frontend_restarts = 0
+        logger.info("%s started (pid=%s)", kind, self._frontend_process.pid)
+        return True
+
+    async def _watch_frontend(self, kind: str) -> None:
+        """Supervise a frontend child. A crash changes only the UI.
+
+        The sole owner of respawns, so the restart budget holds and no second
+        watcher can spawn a duplicate process. A clean exit (code 0) means the
+        user closed the UI, so it is not a crash and is not respawned. A child
+        that dies within the startup grace cannot run on this host, so it is not
+        retried — retrying only delays the fallback.
+        """
+        proc = self._frontend_process
+        started = asyncio.get_running_loop().time()
+        while proc is not None:
+            code = await proc.wait()
+            alive_for = asyncio.get_running_loop().time() - started
             if self._shutting_down:
                 return
-            logger.warning("Orb exited (code=%s)", code)
-            self._orb_restarts += 1
-            if self._orb_restarts > ORB_MAX_RESTARTS:
-                logger.error(
-                    "Orb failed %d times; not restarting. Run --mode console, "
-                    "or check the Qt install.", self._orb_restarts,
-                )
+            if code == 0:
+                logger.info("%s closed by the user", kind)
+                self._frontend = FRONTEND_NONE
+                self._release_terminal(kind)
                 return
-            await asyncio.sleep(ORB_RESTART_DELAY_S)
-            await self._maybe_start_orb()
+            logger.warning("%s exited (code=%s)", kind, code)
+            if alive_for < FRONTEND_STARTUP_GRACE_S:
+                logger.error(
+                    "%s failed to start; not retrying. Text mode continues.",
+                    kind,
+                )
+                self._frontend = FRONTEND_NONE
+                self._release_terminal(kind)
+                return
+            self._frontend_restarts += 1
+            if self._frontend_restarts > FRONTEND_MAX_RESTARTS:
+                logger.error("%s failed %d times; not restarting.", kind, self._frontend_restarts)
+                self._release_terminal(kind)
+                return
+            await asyncio.sleep(FRONTEND_RESTART_DELAY_S)
+            argv = ("aiassistant.orb",) if kind == FRONTEND_GUI else ("aiassistant.tui",)
+            if not await self._spawn_frontend(kind, argv, initial=False):
+                return
+            proc = self._frontend_process
+            started = asyncio.get_running_loop().time()
 
-    async def _stop_orb(self) -> None:
-        proc = self._orb_process
+    def _release_terminal(self, kind: str) -> None:
+        """Give the tty back to the console after a TUI child exits."""
+        if kind != FRONTEND_TUI:
+            return
+        console = self.modules.get("console")
+        if console is not None:
+            console.resume_terminal()
+
+    async def _stop_frontend(self) -> None:
+        proc = self._frontend_process
         if proc is None or proc.returncode is not None:
             return
         try:
@@ -238,14 +359,14 @@ class AssistantRunner:
             proc.kill()
             await proc.wait()
         except Exception:
-            logger.debug("stopping the orb raised", exc_info=True)
+            logger.debug("stopping the frontend raised", exc_info=True)
 
     async def shutdown(self):
         logger.info("Shutting down...")
         self._shutting_down = True
         # Cancel any in-flight turn before tearing modules down, so no task is
         # left holding a provider call or waiting on the bus.
-        await self._stop_orb()
+        await self._stop_frontend()
         for name, mod in reversed(list(self.modules.items())):
             try:
                 await mod.stop()
@@ -264,13 +385,19 @@ def parse_args():
         add_help=False,
     )
     parser.add_argument("-c", "--config", default="config.yaml",
-                        metavar="PATH", help="Config file path (default: config.yaml)")
+                        metavar="PATH", help="Local config file (default: config.yaml; optional)")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="Enable debug logging (default: warnings only)")
-    parser.add_argument("--mode", choices=("console", "audio", "ui", "auto"),
-                        default="auto", help="Interface mode (default: auto from config)")
+    parser.add_argument("--frontend", choices=("gui", "tui", "none", "auto"),
+                        default="auto",
+                        help="Visual shell: gui (orb window), tui (terminal orb), "
+                             "none (text only), auto (default: gui when a display "
+                             "is available). Text and audio always run.")
+    parser.add_argument("--mode", choices=("console", "audio", "ui", "orb", "tui",
+                                           "gui", "none", "auto"), default=None,
+                        help=argparse.SUPPRESS)  # deprecated alias for --frontend
     parser.add_argument("--audio", action="store_true",
-                        help="Deprecated alias for --mode audio")
+                        help="Use the voice backends (speech in and out)")
     parser.add_argument("-h", "--help", action="store_true",
                         help="Show help message and exit")
     return parser
@@ -295,16 +422,26 @@ async def main():
         handlers=[handler],
     )
 
-    mode = args.mode
-    if args.audio and mode == "auto":
-        mode = "audio"
+    # `--frontend` selects the visual shell. `--mode` is the deprecated alias
+    # that also carried the `audio` voice preset; that preset now lives on
+    # `--audio` only. The frontend choice is passed separately from the config
+    # overrides so it outranks the environment and the config file, matching the
+    # documented precedence (REQ-CFG-002).
+    requested = args.frontend if args.frontend != "auto" else None
+    if args.mode is not None and requested is None:
+        logger.warning("--mode is deprecated; use --frontend")
+        requested = None if args.mode == "audio" else args.mode
 
     overrides = {}
-    if mode == "audio":
+    if args.audio or args.mode == "audio":
         overrides["voice.backend"] = "halasr"
         overrides["voice.tts.backend"] = "edge_tts"
 
-    runner = AssistantRunner(args.config, config_overrides=overrides if overrides else None)
+    runner = AssistantRunner(
+        args.config,
+        config_overrides=overrides if overrides else None,
+        display_choice=requested,
+    )
 
     loop = asyncio.get_running_loop()
 

@@ -31,10 +31,16 @@ agent:
     # own. Read docs/security/threat-model.md before enabling it.
     enabled: false
     command: "pi"
-    workspace: "./pi_workspace"
+    # Runtime data under HOME, so the workspace never moves with the directory
+    # the assistant is launched from (ADR-0016).
+    workspace: "~/.config/aiassistant/pi_workspace"
     tools: [read, write, edit, grep, find, ls]
-    policy_extension: "./pi_extensions/workspace_guard.ts"
-    allow_channels: [console, voice, orb]
+    # "builtin" loads the shipped workspace_guard.ts from the package. Any
+    # other value is a path (absolute recommended; ~ is expanded). A path that
+    # does not exist fails startup rather than silently disabling the guard.
+    # null disables the guard (confined tools become unconfined).
+    policy_extension: "builtin"
+    allow_channels: [console, voice, orb, tui]
     turn_timeout_s: 300
     restart_backoff_s: [1, 2, 4, 8, 30]
     memory_prime_on_start: true
@@ -109,8 +115,15 @@ messaging:
   telegram_allowed_users: []
 
 display:
-  # orb | console. console suppresses the window entirely (REQ-CONSOLE-004).
-  mode: orb
+  # The visual shell: gui | tui | none | auto. Text (the console) and audio are
+  # always available; this only selects the extra visual layer (ADR-0017).
+  #   auto  — gui when a display server is available, none otherwise (default)
+  #   gui   — the PySide6 orb window
+  #   tui   — the terminal orb (needs an interactive terminal)
+  #   none  — text only, no visual shell
+  # Legacy values are accepted: orb -> gui, console -> none.
+  # AIASSISTANT_DISPLAY_OFF=1 forces none without touching this file.
+  mode: auto
   always_on_top: true
   # Wayland cannot reliably keep a client on top or accept client positioning;
   # the orb degrades to a normal window there.

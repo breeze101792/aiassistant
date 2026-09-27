@@ -1,6 +1,12 @@
-"""Configuration loading: precedence and legacy-key migration.
+"""Configuration loading: defaults, precedence, and legacy-key migration.
 
-Precedence (REQ-CFG-002): CLI override > environment > config file > defaults.
+Defaults live **in code** (``DEFAULTS``), so the assistant runs with no config
+file at all. ``config.yaml`` is the user's local override: it is overlaid on the
+defaults key by key, so it names only the keys that differ. ``config.example.yaml``
+is the tracked, commented example.
+
+Precedence (REQ-CFG-002): CLI override > environment > local config file >
+code defaults.
 
 Legacy keys from the pre-refactor config are accepted, mapped to their new
 names, and reported once as deprecated (REQ-CFG-004). The mapping lives in
@@ -8,8 +14,149 @@ names, and reported once as deprecated (REQ-CFG-004). The mapping lives in
 """
 
 import logging
+import os
+import sys
 
 logger = logging.getLogger(__name__)
+
+# The frontend is the visual shell. ``mode`` selects only this; text (the
+# console REPL) and audio are always-available capabilities, not modes
+# (ADR-0017).
+FRONTEND_GUI = "gui"
+FRONTEND_TUI = "tui"
+FRONTEND_NONE = "none"
+FRONTEND_AUTO = "auto"
+FRONTENDS = (FRONTEND_GUI, FRONTEND_TUI, FRONTEND_NONE, FRONTEND_AUTO)
+_VALID_FRONTENDS = frozenset(FRONTENDS)
+
+# Accepted for back-compat, mapped to a canonical frontend and warned once.
+# ``console`` meant "no window, REPL on the tty", which is exactly ``none``.
+FRONTEND_ALIASES = {
+    "orb": FRONTEND_GUI,
+    "ui": FRONTEND_GUI,
+    "console": FRONTEND_NONE,
+}
+
+# A display server is declared by an environment variable. macOS Aqua sessions
+# export neither, so a local Mac is treated as having a GUI (see gui_available).
+_DISPLAY_ENV_VARS = ("DISPLAY", "WAYLAND_DISPLAY")
+_PROBED_PLATFORM = "linux"
+
+# Set in a remote shell. With no forwarded display, no window can be shown.
+_SSH_ENV_VARS = ("SSH_CONNECTION", "SSH_TTY")
+
+# Terminals that cannot do cursor addressing; a full-screen TUI must not start.
+_DUMB_TERMS = frozenset({"dumb", "unknown", ""})
+
+# Set when the UI must not be shown. It forces ``none``, but yields to an
+# explicit frontend on the command line (REQ-CFG-002).
+_DISPLAY_OFF_ENV_VAR = "AIASSISTANT_DISPLAY_OFF"
+
+# Every default, in code, so the assistant runs with no config file. This is the
+# single source of truth; config.example.yaml documents the same values for the
+# user. A test asserts the example stays in step (tests/test_config.py).
+DEFAULTS: dict = {
+    "bus": {
+        "bind": "127.0.0.1",
+        "websocket_port": 8765,
+        "remote_auth_token": "",
+    },
+    "agent": {
+        "harness": "native",
+        "persona": (
+            "You are a smart, detail-oriented assistant. Always think step by step.\n"
+            "Match the user's language. Be concise. Use tools when available.\n"
+        ),
+        "llm": {
+            "provider": "ollama",
+            "model": "qwen3:latest",
+            "url": "http://127.0.0.1:11434",
+            "api_key": "",
+            "max_tokens": 4096,
+            "temperature": 0.7,
+        },
+        "pi": {
+            "enabled": False,
+            "command": "pi",
+            "workspace": "~/.config/aiassistant/pi_workspace",
+            "tools": ["read", "write", "edit", "grep", "find", "ls"],
+            "policy_extension": "builtin",
+            "allow_channels": ["console", "voice", "orb", "tui"],
+            "turn_timeout_s": 300,
+            "restart_backoff_s": [1, 2, 4, 8, 30],
+            "memory_prime_on_start": True,
+        },
+        "memory": {
+            "conversations_path": ".config/aiassistant/memory/conversations",
+            "facts_path": ".config/aiassistant/memory/facts",
+            "knowledge_path": ".config/aiassistant/memory/knowledge",
+            "embeddings_db": ".config/aiassistant/embeddings.db",
+            "context_max_tokens": 4096,
+            "context_recent_messages": 20,
+        },
+        "embeddings": {
+            "provider": "ollama",
+            "model": "qwen3-embedding:0.6b",
+            "url": "",
+            "batch_size": 10,
+        },
+        "thinking": {
+            "max_reflect_loops": 3,
+        },
+    },
+    "conversation": {
+        "busy": "interrupt",
+        "turn_timeout_s": 300,
+        "retry_max": 3,
+    },
+    "scheduler": {
+        "storage_path": ".config/aiassistant/schedules.json",
+        "max_pending": 100,
+    },
+    "voice": {
+        "listen": {"mode": "open"},
+        "backend": "stub",
+        "recognizer": "whisper",
+        "hotwords": ["hey jarvis"],
+        "endpoint_silence_ms": 2000,
+        "speak_text_turns": False,
+        "barge_in": {"enabled": False},
+    },
+    "voice_tts": {
+        "backend": "text",
+        "voice": "en-US-AriaNeural",
+        "speed": 1.0,
+    },
+    "vision": {
+        "backend": "stub",
+        "camera_index": 0,
+        "vision_model": None,
+        "vision_model_url": "",
+    },
+    "tools": {
+        "packages": [
+            "aiassistant.tools.builtin_tools",
+            "aiassistant.tools.skills",
+        ],
+        "sandbox_default": False,
+        "command_timeout": 30,
+        "safe_paths": ["./workspace", "/tmp/aiassistant"],
+    },
+    "console": {
+        "backend": "simple",
+        "prompt": "> ",
+    },
+    "messaging": {
+        "backends": [],
+        "telegram_token": "",
+        "telegram_allowed_users": [],
+    },
+    "display": {
+        "mode": FRONTEND_AUTO,
+        "always_on_top": True,
+        "reduced_motion": False,
+    },
+}
 
 # Old top-level section -> new top-level section.
 LEGACY_SECTIONS = {
@@ -75,3 +222,141 @@ def apply_overrides(config: dict, overrides: dict) -> None:
         for part in parts[:-1]:
             target = target.setdefault(part, {})
         target[parts[-1]] = value
+
+
+# The local config file, relative to the working directory. It is ignored by
+# git; config.example.yaml is the tracked, commented example.
+LOCAL_CONFIG_NAME = "config.yaml"
+EXAMPLE_CONFIG_NAME = "config.example.yaml"
+
+
+def merge_config(base: dict, overlay: dict) -> dict:
+    """Deep-merge ``overlay`` onto ``base`` in place and return it.
+
+    Nested mappings merge key by key, so a partial overlay changes only the keys
+    it names; a scalar or a list replaces the base value.
+    """
+    for key, value in overlay.items():
+        current = base.get(key)
+        if isinstance(value, dict) and isinstance(current, dict):
+            merge_config(current, value)
+        else:
+            base[key] = value
+    return base
+
+
+def load_config_file(path: str) -> dict:
+    """Read one YAML config file. A missing or empty file is an empty dict."""
+    import yaml
+
+    try:
+        with open(path) as handle:
+            raw = yaml.safe_load(handle)
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        logger.warning("Cannot read config %s: %s", path, exc)
+        return {}
+    except yaml.YAMLError as exc:
+        logger.warning("Config %s is not valid YAML: %s", path, exc)
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def load_config(path: str = LOCAL_CONFIG_NAME) -> dict:
+    """Return the effective config: ``DEFAULTS`` overlaid by the local file.
+
+    The file is optional. With none present the code defaults apply, so the
+    assistant runs on a fresh clone with no setup (REQ-CFG-008). The defaults
+    are deep-copied, so loading never mutates them.
+    """
+    import copy
+
+    config = copy.deepcopy(DEFAULTS)
+    raw = load_config_file(path)
+    if raw:
+        merge_config(config, migrate_legacy(raw))
+        logger.debug("Local config applied: %s", path)
+    return config
+
+
+def gui_available() -> bool:
+    """True when a window can be shown in this process environment.
+
+    Display variables are checked first, so a forwarded X session (an SSH login
+    with a real ``DISPLAY``) still counts as usable. SSH with nothing forwarded
+    cannot show a window, which closes the gap where a macOS SSH session wrongly
+    reported a GUI. A local macOS Aqua session exports neither variable and is
+    treated as having one.
+    """
+    if any(os.environ.get(var) for var in _DISPLAY_ENV_VARS):
+        return True
+    if any(os.environ.get(var) for var in _SSH_ENV_VARS):
+        return False
+    if sys.platform != _PROBED_PLATFORM:
+        return True
+    return False
+
+
+def tui_available() -> tuple[bool, str]:
+    """Whether a full-screen terminal UI can start here, and why not.
+
+    Checked **before** entering curses: ``curses.initscr()`` can exit the
+    interpreter on a bad terminal, and even on a good one it writes escape
+    sequences, so a failed start must be decided here. This is safe to call in
+    the parent: ``setupterm`` raises, it does not exit.
+    """
+    try:
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            return False, "stdin/stdout is not a terminal"
+    except (ValueError, AttributeError):
+        return False, "stdin/stdout is not a terminal"
+
+    term = os.environ.get("TERM", "")
+    if term in _DUMB_TERMS:
+        return False, f"TERM is {term or 'unset'}"
+
+    try:
+        import curses
+    except ImportError:
+        return False, "the curses module is not available"
+
+    try:
+        curses.setupterm()
+        if curses.tigetstr("cup") is None:
+            return False, "the terminal lacks cursor addressing"
+    except curses.error as exc:
+        return False, f"terminfo unavailable: {exc}"
+    return True, ""
+
+
+def canonical_frontend(value: str | None) -> str | None:
+    """Map an alias to a canonical frontend. Unknown values pass through."""
+    if value is None:
+        return None
+    return FRONTEND_ALIASES.get(value, value)
+
+
+def resolve_frontend(config: dict, cli_choice: str | None = None) -> str:
+    """Collapse the frontend preference to ``gui``, ``tui``, or ``none``.
+
+    Precedence follows REQ-CFG-002: an explicit CLI choice beats the
+    environment, which beats the config file, which beats ``auto``. ``auto``
+    (and an unset mode) is ``gui`` when a display is available and ``none``
+    otherwise; it never resolves to ``tui``, which is explicit by design.
+    """
+    choice = canonical_frontend(cli_choice)
+    if choice in (FRONTEND_GUI, FRONTEND_TUI, FRONTEND_NONE):
+        return choice
+
+    if os.environ.get(_DISPLAY_OFF_ENV_VAR):
+        return FRONTEND_NONE
+
+    mode = canonical_frontend(config.get("display", {}).get("mode", FRONTEND_AUTO))
+    if mode not in _VALID_FRONTENDS:
+        logger.warning("Unknown display.mode %r; falling back to %s", mode, FRONTEND_AUTO)
+        mode = FRONTEND_AUTO
+
+    if mode == FRONTEND_AUTO:
+        return FRONTEND_GUI if gui_available() else FRONTEND_NONE
+    return mode

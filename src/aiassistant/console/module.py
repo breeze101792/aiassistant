@@ -6,6 +6,7 @@ import signal
 import sys
 
 from aiassistant.base import BaseModule
+from aiassistant.bus import topics
 
 logger = logging.getLogger(__name__)
 
@@ -32,20 +33,27 @@ class ConsoleModule(BaseModule):
         self._show_thinking = False
         self._read_task: asyncio.Task | None = None
         self._reader_added = False
+        # When a TUI owns the terminal, the console must not read stdin or
+        # print (REQ-FRONTEND-009). Defaults True so standalone use and tests
+        # are unchanged.
+        self._owns_terminal = True
+        self._streaming = False
 
     async def setup(self) -> bool:
-        logger.info("CLI setup complete")
+        logger.info("Console setup complete")
         return True
 
     async def start(self) -> None:
         self._running = True
-        self.bus.subscribe("response.text", self._handle_response)
-        self.bus.subscribe("status.ears.listening", self._handle_listening)
-        self.bus.subscribe("status.ears.processing", self._handle_processing)
-        self.bus.subscribe("status.ears.transcribed", self._handle_transcribed)
-        self.bus.subscribe("status.ears.error", self._handle_error)
-        self.bus.subscribe("status.mouth.error", self._handle_error)
-        self.bus.subscribe("status.assistant.ready", self._handle_ready)
+        # Text is always available (ADR-0017), so subscribe to the live topics.
+        # These were previously the as-built status.ears.* names, which nothing
+        # publishes, so the status handlers never ran.
+        self.bus.subscribe(topics.AGENT_FINAL, self._handle_final)
+        self.bus.subscribe(topics.AGENT_DELTA, self._handle_delta)
+        self.bus.subscribe(topics.VOICE_STATE, self._handle_voice_state)
+        self.bus.subscribe(topics.VOICE_TRANSCRIBED, self._handle_transcribed)
+        self.bus.subscribe(topics.AGENT_TURN_ERROR, self._handle_error)
+        self.bus.subscribe(topics.STATUS_ASSISTANT_READY, self._handle_ready)
 
         readline.set_completer(self._complete)
         if "libedit" in (readline.__doc__ or ""):
@@ -58,8 +66,38 @@ class ConsoleModule(BaseModule):
         except FileNotFoundError:
             pass
 
-        logger.info("CLI started — reading stdin")
-        self._read_task = asyncio.ensure_future(self._read_loop())
+        logger.info("Console started — reading stdin")
+        self._start_reader()
+
+    def _start_reader(self) -> None:
+        if self._read_task is None or self._read_task.done():
+            self._read_task = asyncio.ensure_future(self._read_loop())
+
+    def suspend_terminal(self) -> None:
+        """Yield the tty to another frontend (the TUI). Idempotent."""
+        if not self._owns_terminal:
+            return
+        self._owns_terminal = False
+        task = self._read_task
+        self._read_task = None
+        self._remove_reader()
+        if task and not task.done():
+            task.cancel()
+        logger.info("Console terminal I/O suspended")
+
+    def resume_terminal(self) -> None:
+        """Reclaim the tty after the other frontend exits."""
+        if self._owns_terminal:
+            return
+        self._owns_terminal = True
+        self._start_reader()
+        logger.info("Console terminal I/O resumed")
+        self._render(f"\n{self.prompt}")
+
+    def _render(self, text: str) -> None:
+        """Write to the terminal unless another frontend owns it."""
+        if self._owns_terminal:
+            print(text, end="", flush=True)
 
     async def stop(self) -> None:
         self._running = False
@@ -81,7 +119,7 @@ class ConsoleModule(BaseModule):
             readline.write_history_file(HISTORY_FILE)
         except Exception:
             pass
-        logger.info("CLI stopped")
+        logger.info("Console stopped")
 
     async def health(self) -> dict:
         return {"status": "ok" if self._running else "stopped"}
@@ -151,7 +189,11 @@ class ConsoleModule(BaseModule):
         except asyncio.CancelledError:
             raise
         finally:
-            self._remove_reader()
+            # Only clean up if this task still owns the reader. A cancelled loop
+            # may finish after resume_terminal() started a replacement; removing
+            # the reader then would leave the console with no stdin reader.
+            if self._read_task is asyncio.current_task():
+                self._remove_reader()
 
     async def _poll_stdin(self) -> str:
         """Non-blocking read for a non-tty stdin, yielding to the loop."""
@@ -200,34 +242,56 @@ class ConsoleModule(BaseModule):
             self._print_help()
             return True
 
-        print("Thinking...", end="", flush=True)
+        self._render("Thinking...")
         self.bus.user_input(line)
         return True
 
-    async def _handle_response(self, topic: str, payload: dict) -> None:
+    async def _handle_delta(self, topic: str, payload: dict) -> None:
+        """Render assistant text incrementally (REQ-CONSOLE-005).
+
+        Thinking deltas are not transcript text. The first text delta settles
+        the "Thinking..." marker and opens the assistant line; later deltas
+        append in place.
+        """
+        if payload.get("kind", "text") == "thinking":
+            return
+        text = payload.get("text", "")
+        if not text:
+            return
+        if not self._streaming:
+            self._streaming = True
+            self._render(f"\r\x1b[KAssistant: {text}")
+        else:
+            self._render(text)
+
+    async def _handle_final(self, topic: str, payload: dict) -> None:
         text = payload.get("text", "")
         thinking = payload.get("thinking")
-        print(f"\r\x1b[KAssistant: {text}")
+        # Settle the authoritative text on the line the deltas were streaming to.
+        self._render(f"\r\x1b[KAssistant: {text}")
+        self._streaming = False
         if self._show_thinking and thinking:
-            print(f"\033[90m  [{thinking[:200]}]\033[0m")
-        print(f"\n{self.prompt}", end="", flush=True)
+            self._render(f"\n\033[90m  [{thinking[:200]}]\033[0m")
+        self._render(f"\n{self.prompt}")
 
-    async def _handle_listening(self, topic: str, payload: dict) -> None:
-        print(f"\r\x1b[K\033[33m● Listening...\033[0m", end="", flush=True)
-
-    async def _handle_processing(self, topic: str, payload: dict) -> None:
-        print(f"\r\x1b[K\033[36m● Processing...\033[0m", end="", flush=True)
+    async def _handle_voice_state(self, topic: str, payload: dict) -> None:
+        state = payload.get("state", "")
+        if state == "listening":
+            self._render("\r\x1b[K\033[33m● Listening...\033[0m")
+        elif state in ("transcribing", "thinking"):
+            self._render("\r\x1b[K\033[36m● Processing...\033[0m")
 
     async def _handle_transcribed(self, topic: str, payload: dict) -> None:
         text = payload.get("text", "")
-        print(f"\r\x1b[K\033[32mYou: {text}\033[0m")
-        print(f"{self.prompt}", end="", flush=True)
+        self._render(f"\r\x1b[K\033[32mYou: {text}\033[0m\n{self.prompt}")
 
     async def _handle_ready(self, topic: str, payload: dict) -> None:
-        print("Ready. Type /help for commands.\n")
+        self._render("Ready. Type /help for commands.\n")
 
     async def _handle_error(self, topic: str, payload: dict) -> None:
-        print(f"\n[!] Error ({topic}): {payload.get('error', 'unknown')}\n{self.prompt}", end="", flush=True)
+        message = payload.get("message") or payload.get("error", "unknown")
+        self._streaming = False
+        self._render(f"\n[!] Error ({topic}): {message}\n{self.prompt}")
 
     def _set_log_level(self, line: str):
         arg = line[4:].strip()

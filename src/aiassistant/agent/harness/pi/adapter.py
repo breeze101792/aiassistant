@@ -27,7 +27,12 @@ from aiassistant.agent.harness.base import (
     TurnRequest,
 )
 from aiassistant.agent.harness.pi import events as pi_events
-from aiassistant.agent.harness.pi.process import PiProcess, PiProcessConfig
+from aiassistant.agent.harness.pi.process import (
+    BUILTIN_GUARD,
+    DEFAULT_WORKSPACE,
+    PiProcess,
+    PiProcessConfig,
+)
 from aiassistant.agent.harness.pi.protocol import (
     ABORT,
     CLEAR_QUEUE,
@@ -55,9 +60,9 @@ class PiHarness(AgentHarness):
     def __init__(self, pi_cfg: dict):
         self.cfg = PiProcessConfig(
             command=pi_cfg.get("command", "pi"),
-            workspace=pi_cfg.get("workspace", "./pi_workspace"),
+            workspace=pi_cfg.get("workspace", DEFAULT_WORKSPACE),
             tools=pi_cfg.get("tools") or PiProcessConfig().tools,
-            policy_extension=pi_cfg.get("policy_extension"),
+            policy_extension=pi_cfg.get("policy_extension", BUILTIN_GUARD),
             no_session=pi_cfg.get("no_session", True),
             restart_backoff_s=pi_cfg.get("restart_backoff_s") or [1, 2, 4, 8, 30],
             model=pi_cfg.get("model", ""),

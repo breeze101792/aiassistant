@@ -14,7 +14,7 @@ agents:
       provider: ollama     # ollama | openai
       model: qwen3:latest
     pi:                    # pi's own config, used only by the pi harness
-      workspace: ./pi_workspace
+      workspace: ~/.config/aiassistant/pi_workspace
 ```
 
 ## Why

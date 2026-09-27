@@ -1,5 +1,6 @@
 import logging
 import pytest
+from aiassistant.bus import topics
 from aiassistant.console.module import ConsoleModule
 
 
@@ -205,3 +206,113 @@ class TestShutdownSafety:
             assert result is _NO_LINE or result == ""
 
         asyncio.run(scenario())
+
+
+class TestLiveTopics:
+    """The console must subscribe to the topics that are actually published.
+
+    It previously listened for ``status.ears.*`` and ``status.mouth.error``,
+    which nothing publishes, so its status handlers never ran.
+    """
+
+    def _started(self):
+        import asyncio
+        from aiassistant.bus.bus import MessageBus
+
+        async def scenario():
+            bus = MessageBus()
+            cli = ConsoleModule(bus, {})
+            await cli.start()
+            return bus, cli
+
+        return asyncio.run(scenario())
+
+    def test_subscribes_to_voice_state(self):
+        bus, cli = self._started()
+        assert bus.has_subscriber(topics.VOICE_STATE)
+
+    def test_subscribes_to_delta_and_final(self):
+        bus, cli = self._started()
+        assert bus.has_subscriber(topics.AGENT_DELTA)
+        assert bus.has_subscriber(topics.AGENT_FINAL)
+
+    def test_does_not_subscribe_to_dead_topics(self):
+        bus, cli = self._started()
+        for dead in ("status.ears.listening", "status.ears.transcribed",
+                     "status.mouth.error", "response.text"):
+            assert not bus.has_subscriber(dead)
+
+
+class TestStreaming:
+    """REQ-CONSOLE-005: assistant text renders incrementally from deltas."""
+
+    def _run_events(self, events):
+        import asyncio
+        from aiassistant.bus.bus import MessageBus
+
+        async def scenario():
+            bus = MessageBus()
+            cli = ConsoleModule(bus, {})
+            await cli.start()
+            for topic, payload in events:
+                bus.publish(topic, payload)
+            await asyncio.sleep(0)  # let scheduled coroutine handlers run
+            await cli.stop()
+
+        asyncio.run(scenario())
+
+    def test_deltas_accumulate_then_final_settles(self, capsys):
+        self._run_events([
+            (topics.AGENT_DELTA, {"index": 0, "kind": "text", "text": "Hel"}),
+            (topics.AGENT_DELTA, {"index": 1, "kind": "text", "text": "lo"}),
+            (topics.AGENT_FINAL, {"text": "Hello"}),
+        ])
+        out = capsys.readouterr().out
+        assert "Assistant: Hel" in out
+        assert "Assistant: Hello" in out
+
+    def test_thinking_deltas_are_not_transcript_text(self, capsys):
+        self._run_events([
+            (topics.AGENT_DELTA, {"index": 0, "kind": "thinking", "text": "hmm"}),
+        ])
+        assert "hmm" not in capsys.readouterr().out
+
+    def test_voice_state_renders_a_status_line(self, capsys):
+        self._run_events([(topics.VOICE_STATE, {"state": "listening"})])
+        assert "Listening" in capsys.readouterr().out
+
+
+class TestTerminalOwnership:
+    """REQ-FRONTEND-009: only one of the console and the TUI owns the tty."""
+
+    def _cli(self):
+        from aiassistant.bus.bus import MessageBus
+        return ConsoleModule(MessageBus(), {})
+
+    def test_owns_terminal_by_default(self):
+        assert self._cli()._owns_terminal is True
+
+    def test_suspend_stops_rendering(self, capsys):
+        cli = self._cli()
+        cli.suspend_terminal()
+        cli._render("must not appear")
+        assert "must not appear" not in capsys.readouterr().out
+
+    def test_resume_restores_rendering(self, capsys):
+        import asyncio
+
+        async def scenario():
+            cli = self._cli()
+            cli.suspend_terminal()
+            cli.resume_terminal()
+            cli._render("visible")
+            await cli.stop()
+
+        asyncio.run(scenario())
+        assert "visible" in capsys.readouterr().out
+
+    def test_suspend_is_idempotent(self):
+        cli = self._cli()
+        cli.suspend_terminal()
+        cli.suspend_terminal()
+        assert cli._owns_terminal is False

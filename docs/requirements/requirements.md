@@ -96,8 +96,28 @@ on-target audio rig (loopback or fixture) · `inspection`.
 | REQ-CONSOLE-001 | Headless fallback works. | When the orb cannot start, the assistant runs in console mode and remains usable. | [A] | mac, linux |
 | REQ-CONSOLE-002 | Same behavior in both frontends. | Console and orb drive the same bus topics; a turn behaves identically. | [A] | host, mac |
 | REQ-CONSOLE-003 | Console shows transcript, status, errors. | Console renders transcript entries, module status, and errors. | [A] | host |
-| REQ-CONSOLE-004 | Console can be forced. | `display.mode: console` starts without a GUI even when a GUI is available. | [A] | mac, linux |
+| REQ-CONSOLE-004 | Text-only can be forced. | `display.mode: none` (legacy `console`) starts no visual shell even when a GUI is available; text still runs. | [A] | mac, linux |
 | REQ-CONSOLE-005 | Streaming in console. | Assistant text renders incrementally from deltas. | [A] | host |
+| REQ-CONSOLE-006 | Headless autodetect. | `display.mode: auto` starts no visual shell on a machine with no display server, and the GUI orb when one is present. `AIASSISTANT_DISPLAY_OFF` forces `none` unless the CLI names a frontend. | [A] | host, mac, linux |
+
+## Frontends
+
+`mode` selects only the visual shell; text and audio always run (ADR-0017).
+
+| ID | Requirement | Acceptance criterion | Source | Verify |
+| --- | --- | --- | --- | --- |
+| REQ-FRONTEND-001 | One frontend concept. | A single selection with values `gui`/`tui`/`none`/`auto` chooses the visual shell; legacy `orb`/`ui` alias `gui` and `console` aliases `none`. | [S] | inspection, host |
+| REQ-FRONTEND-002 | Deterministic precedence. | CLI `--frontend` beats `AIASSISTANT_DISPLAY_OFF`, which beats `display.mode`, which beats the `auto` default. | [A] | host |
+| REQ-FRONTEND-003 | `auto` resolves by host. | `gui` on a Linux desktop (display var set) or a local macOS session; `none` on a headless host or an SSH session with nothing forwarded. `auto` never picks `tui`. | [A] | host, mac, linux |
+| REQ-FRONTEND-004 | Explicit `gui` without a display degrades loudly. | `--frontend gui` with no display server starts no orb, logs the reason, and uses `tui` when a terminal is usable, else `none`. | [S] | mac, linux |
+| REQ-FRONTEND-005 | TUI is stdlib and display-free. | The TUI runs with no display server, using only the standard library; no new runtime dependency. | [S] | linux, inspection |
+| REQ-FRONTEND-006 | TUI shows the same state and transcript as the GUI. | State, transcript rows, streaming text, and the harness badge match the GUI orb for the same bus sequence. | [S] | host |
+| REQ-FRONTEND-007 | TUI controls exist. | Interrupt, mute, scroll/clear, input, and quit are keyboard-operable and publish the same topics as the GUI orb. | [S] | host, linux |
+| REQ-FRONTEND-008 | TUI preconditions degrade, never crash. | With a non-tty, unset/`dumb` `TERM`, or a curses init failure, the TUI does not start and text mode continues; the terminal stays usable. | [A] | host, linux |
+| REQ-FRONTEND-009 | One tty owner. | The console and the TUI never both read stdin; while the TUI owns the terminal the console's I/O is suppressed, and it resumes when the TUI exits. | [A] | host, inspection |
+| REQ-FRONTEND-010 | No frontend failure stops the assistant. | An orb, TUI, or console startup failure leaves the assistant running in the next available frontend. | [A] | mac, linux |
+| REQ-FRONTEND-011 | `none` runs without a visual shell. | `--frontend none` starts no orb and no TUI; the assistant remains operational (text, voice, bridge, scheduler). | [S] | host, linux |
+| REQ-FRONTEND-012 | Text and audio are not modes. | The frontend selection never changes the voice backends or whether text input works; `audio` is not a frontend value. | [A] | host, inspection |
 
 ## Cross-platform
 
@@ -113,11 +133,13 @@ on-target audio rig (loopback or fixture) · `inspection`.
 | ID | Requirement | Acceptance criterion | Source | Verify |
 | --- | --- | --- | --- | --- |
 | REQ-CFG-001 | One config selects all backends. | A single file selects each component's backend; no code edit is needed. | [S] | host |
-| REQ-CFG-002 | Deterministic precedence. | CLI override > environment > config file > defaults; each layer is tested to win over the next. | [A] | host |
+| REQ-CFG-002 | Deterministic precedence. | CLI override > environment > `config.yaml` > code defaults; each layer is tested to win over the next. | [A] | host |
 | REQ-CFG-003 | Invalid config is actionable. | An unknown or invalid key errors with the key and value named; the app starts with defaults where safe. | [A] | host |
 | REQ-CFG-004 | Legacy keys migrate. | Old section keys (`brain`, `ears`, `mouth`, `hands`, `eyes`, `canvas`, `chat`, `cli`) are accepted with a deprecation warning and mapped to the new keys. | [A] | host |
 | REQ-CFG-005 | Secrets stay out of config. | API keys come from environment or keychain; the checked-in config contains no secret values. | [A] | inspection |
 | REQ-CFG-006 | Multiple agents are definable. | `agents:` is a map; more than one identity (wake phrase, persona, harness, voice) can be defined. | [S] | host |
+| REQ-CFG-007 | Config is local and optional. | Every default lives in code, so the assistant runs with no config file. `config.yaml` is git-ignored and overlays only the keys it names. | [S] | host |
+| REQ-CFG-008 | The example matches the defaults. | `config.example.yaml` is tracked and mirrors `DEFAULTS` key for key; a test fails if the two drift. | [A] | host |
 
 ## Structure and refactor
 

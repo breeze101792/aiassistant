@@ -14,7 +14,8 @@ shows an ambient orb. The reasoning backend is selectable: our own loop
 
 ```sh
 ./start.sh                  # run (console + orb)
-./start.sh --mode console   # headless
+./start.sh --frontend none  # text only
+./start.sh --frontend tui   # terminal orb (in a terminal)
 ./start.sh test             # the whole suite
 ./.venv/bin/python -m pytest tests/test_voice.py -q    # one file
 ```
@@ -77,9 +78,11 @@ These are the things that actually bit. They are cheap to re-break.
    token.** With pi enabled, an open bus is a remote shell.
 
 10. **pi is opt-in and confined at the coding level only.** `pi.enabled: true`
-    is required. The tool allowlist excludes shell; `pi_extensions/workspace_guard.ts`
-    vetoes out-of-workspace paths. Network access and prompt injection are
-    **not** contained. Read `docs/security/threat-model.md`.
+    is required. The tool allowlist excludes shell;
+    `agent/harness/pi/workspace_guard.ts` (shipped as package data, loaded from
+    an absolute path) vetoes out-of-workspace paths, and a missing guard fails
+    startup. Network access and prompt injection are **not** contained. Read
+    `docs/security/threat-model.md`.
 
 ## Adding a module
 
@@ -92,12 +95,16 @@ These are the things that actually bit. They are cheap to re-break.
 ## Commits
 
 Do not commit or push unless asked. When asked, inspect `git status` and
-`git diff` first, and stage only intended files. `pi_workspace/` and `.config/`
-are ignored runtime data.
+`git diff` first, and stage only intended files. `.config/` and a repo-relative
+`pi_workspace/` are ignored runtime data; pi's default workspace lives under
+`~/.config/aiassistant/`. Defaults live in `config.py` (`DEFAULTS`);
+`config.yaml` is the user's local, git-ignored override and
+`config.example.yaml` is the tracked example.
 
 ## Current state
 
-Refactored and committed in `8b42ab9`. Suite: 341 passed, 1 skipped.
+Refactored and committed in `8b42ab9`. Suite: 441 passed, 5 skipped, 5 failed
+(environment-only: no Ollama, `pkg_resources`/`libstdc++` absent in the venv).
 
 Open, and stated as unverified rather than assumed:
 

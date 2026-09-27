@@ -1,0 +1,308 @@
+TUI orb reference mockup -- docs/ui/tui/mockup.txt
+Counterpart of docs/ui/mockup.html. It is monochrome text by definition: no
+color, no animation. Every frame is a literal capture and renders 1:1 in a
+terminal of the stated size.
+
+Conventions in this file:
+  '_'   marks the cursor: the text cursor in the composer, or the streaming
+        cursor at the end of an assistant row still receiving deltas.
+  '#' / '-'  are the filled and empty cells of the level meter. In the real
+        TUI the fill is reverse-video or a color pair; here it is text.
+  '^T'  means Ctrl+T (and so on). Curses draws '^' for the control key.
+  Attributes (A_BOLD / A_DIM / A_REVERSE) and color pairs are an enhancement
+        and are not visible in a plain text capture; see tokens.md for the
+        mapping and the always-present non-color cue.
+
+
+===== connecting  (80x24) =====
+:o: Connecting...                                               native / unknown
+--------------------------------------------------------------------------------
+  (bridge unreachable, retrying)                                                
+  retrying: attempt 2, next in 4s                                               
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+mic [--------------------]   0%                                                 
+--------------------------------------------------------------------------------
+you> _Type a message...                                                         
+Esc stop  ^T mute  ^L clear  ^D quit  F1 help                             pinned
+
+===== idle  (80x24) =====
+(o) Idle                                                   native / qwen3:latest
+--------------------------------------------------------------------------------
+You       What is the weather?                                          10:14:02
+Jarvis    It is sunny today.                                            10:14:05
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+mic [--------------------]   0%                                                 
+--------------------------------------------------------------------------------
+you> _Type a message...                                                         
+Esc stop  ^T mute  ^L clear  ^D quit  F1 help                             pinned
+
+===== listening  (80x24) =====
+>o< Listening                                              native / qwen3:latest
+--------------------------------------------------------------------------------
+You       What is the weather?                                          10:14:02
+Jarvis    It is sunny today.                                            10:14:05
+  .. hearing you ..                                                             
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+mic [################----]  79%                                                 
+--------------------------------------------------------------------------------
+you> _Type a message...                                                         
+Esc stop  ^T mute  ^L clear  ^D quit  F1 help                             pinned
+
+===== transcribing  (80x24) =====
+}o{ Transcribing                                           native / qwen3:latest
+--------------------------------------------------------------------------------
+You       Set a timer for ten minutes.                                  10:15:11
+  .. converting speech to text ..                                               
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+mic [--------------------]   0%                                                 
+--------------------------------------------------------------------------------
+you> _Type a message...                                                         
+Esc stop  ^T mute  ^L clear  ^D quit  F1 help                             pinned
+
+===== thinking (streaming text)  (80x24) =====
+~o~ Thinking                                               native / qwen3:latest
+--------------------------------------------------------------------------------
+You       Will it rain tomorrow?                                        10:16:20
+Thinking  checking the weather tool...                                  10:16:21
+tool      get_weather: running                                          10:16:21
+Jarvis    Yes, light rain in the morning, clearing by_                  10:16:23
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+mic [--------------------]   0%                                                 
+--------------------------------------------------------------------------------
+you> _Type a message...                                                         
+Esc stop  ^T mute  ^L clear  ^D quit  F1 help                              3 new
+
+===== speaking  (80x24) =====
+<o> Speaking                                               native / qwen3:latest
+--------------------------------------------------------------------------------
+You       Will it rain tomorrow?                                        10:16:20
+tool      get_weather: ok                                               10:16:22
+Jarvis    Yes, light rain in the morning, clearing by noon.             10:16:23
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+spk [#############-------]  63%                                                 
+--------------------------------------------------------------------------------
+you> _Type a message...                                                         
+Esc stop  ^T mute  ^L clear  ^D quit  F1 help                             pinned
+
+===== muted  (80x24) =====
+/o/ Muted                                                  native / qwen3:latest
+--------------------------------------------------------------------------------
+You       Remind me to call Sam.                                        10:18:40
+Jarvis    I will remind you at 17:00.                                   10:18:42
+  (capture stopped; the orb shows Muted)                                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+mic [--------------------]   0%                                                 
+--------------------------------------------------------------------------------
+you> _Type a message...                                                         
+Esc unmute  ^T mute  ^L clear  ^D quit  F1 help                           pinned
+
+===== error (base state)  (80x24) =====
+%o% Error                                                  native / qwen3:latest
+--------------------------------------------------------------------------------
+You       Summarise my unread mail.                                     10:20:01
+!Error    [config] mail token is not configured                         10:20:03
+          hint: set messaging.mail.token, then retry                            
+Jarvis    I could not reach your mail account.                          10:20:04
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+mic [--------------------]   0%                                                 
+--------------------------------------------------------------------------------
+you> _Type a message...                                                         
+Esc dismiss  ^T mute  ^L clear  ^D quit  F1 help                          pinned
+
+===== backend-down overlay (layered on speaking)  (80x24) =====
+<o> Speaking  ! Backend down                            native / qwen3:latest  !
+--------------------------------------------------------------------------------
+You       What is the weather?                                          10:21:10
+  (harness unhealthy: backend-down overlay on a base state)                     
+!Error    [harness] pi did not respond                                  10:21:12
+          hint: check pi, then retry (Esc dismisses)                            
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+spk [########------------]  40%                                                 
+--------------------------------------------------------------------------------
+you> _Type a message...                                                         
+Esc dismiss  ^T mute  ^L clear  ^D quit  F1 help                          pinned
+
+===== terminal too small  (50x15) =====
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+   Terminal too small: need 60x16, have 50x15.    
+   Resize the window, or press Ctrl+D to quit.    
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+                                                  
+
+===== wide - thinking (streaming, wrapped)  (120x40) =====
+~o~ Thinking                                                                                       native / qwen3:latest
+------------------------------------------------------------------------------------------------------------------------
+You       Summarise the meeting notes and list every action item with an owner.                                 10:30:02
+Thinking  reading meeting-notes.md, grouping decisions vs tasks...                                              10:30:03
+tool      read_file: running  path="meeting-notes.md"                                                           10:30:03
+tool      read_file: ok  4.2 kB in 38 ms                                                                        10:30:05
+Jarvis    Three decisions and five action items: Dana owns the schedule,                                        10:30:07
+          Ravi owns the migration, and I will draft the summary_                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+mic [------------------------------]   0%                                                                               
+------------------------------------------------------------------------------------------------------------------------
+you> _Type a message...                                                                                                 
+Esc stop  ^T mute  ^L clear  ^D quit  PgUp/PgDn scroll  F1 help                                                   pinned

@@ -4,8 +4,8 @@ Entities, fields, storage, and lifetime. Every number carries units or a source.
 
 ## Storage layout
 
-All paths come from config. Defaults shown. Nothing is written outside these
-roots except the pi workspace.
+All paths come from config. Defaults shown. The pi workspace is anchored to
+`$HOME`; the rest are relative, except pi's own `~/.pi/agent/`.
 
 | Store | Default path | Format | Lifetime |
 | --- | --- | --- | --- |
@@ -16,7 +16,7 @@ roots except the pi workspace.
 | Schedules | `.config/aiassistant/schedules.json` | JSON | Until fired or deleted |
 | Console history | `.config/aiassistant/history` | readline | Indefinite |
 | Artifacts | `tools.artifacts_path` | Files written by tools | Indefinite |
-| pi workspace | `agents.<id>.pi.workspace` | Any | Until the user clears it |
+| pi workspace | `~/.config/aiassistant/pi_workspace` | Any | Until the user clears it |
 | pi config | `~/.pi/agent/` (`PI_CODING_AGENT_DIR`) | pi-owned | pi-owned |
 
 The markdown conversation format is **frozen from as-built**
@@ -91,8 +91,19 @@ embedding model requires a rebuild.
 
 ## Config model
 
-Config is one YAML file with a defined precedence (REQ-CFG-002):
-CLI override > environment > file > built-in defaults.
+Every default lives in code (`config.py` `DEFAULTS`), so the assistant runs with
+no config file. Config is layered YAML with a defined precedence (REQ-CFG-002):
+CLI override > environment > `config.yaml` > code defaults.
+
+| Layer | Path | Role |
+| --- | --- | --- |
+| Local config | `config.yaml` (`-c` overrides) | The user's overrides. Optional and git-ignored. |
+| Code defaults | `config.py` `DEFAULTS` | The single source of truth; the app runs on these alone. |
+| Example | `config.example.yaml` | Tracked, commented copy of the defaults for the user to copy. |
+
+The local file is deep-merged key by key over the defaults, so it names only
+what it changes. A guard test asserts `config.example.yaml` matches `DEFAULTS`
+key for key, so the example cannot drift into a lie.
 
 ```yaml
 agents:
@@ -109,10 +120,10 @@ agents:
     pi:                        # pi only
       enabled: false           # explicit opt-in (REQ-SEC-003)
       command: "pi"
-      workspace: "./pi_workspace"
+      workspace: "~/.config/aiassistant/pi_workspace"
       tools: [read, write, edit, grep, find, ls]
-      policy_extension: "./pi_extensions/workspace_guard.ts"
-      allow_channels: [console, voice, orb]
+      policy_extension: "builtin"
+      allow_channels: [console, voice, orb, tui]
       turn_timeout_s: 300
       restart_backoff_s: [1, 2, 4, 8, 30]
       memory_prime_on_start: true
@@ -134,5 +145,5 @@ are accepted with a deprecation warning and mapped (REQ-CFG-004).
 | Conversation markdown | Indefinite; user-owned files |
 | Embeddings | Derived; safe to delete and rebuild |
 | Schedules | Deleted when fired (one-shot) or re-armed (recurring) |
-| Transcript shown in the orb | Session only; scrollback reads from memory on demand |
+| Transcript shown in the orb or TUI | Session only; scrollback reads from memory on demand. Neither frontend persists state (no TUI history file; the console's readline history is separate) |
 | pi session context | Lifetime of the pi child process (`--no-session`) |

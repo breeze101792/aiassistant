@@ -14,6 +14,7 @@ import os
 import shutil
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from importlib import resources
 
 from aiassistant.agent.harness.pi.protocol import (
     GET_STATE,
@@ -35,6 +36,14 @@ ENV_ALLOWLIST = (
     "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY",
 )
 
+# The confinement guard ships as package data. ``BUILTIN_GUARD`` is the
+# sentinel that selects it; any other string is a user-supplied path.
+BUILTIN_GUARD = "builtin"
+_GUARD_RESOURCE = "workspace_guard.ts"
+
+# Runtime data, anchored to HOME so the workspace never moves with the CWD.
+DEFAULT_WORKSPACE = "~/.config/aiassistant/pi_workspace"
+
 _STDERR_TAIL_CHARS = 2000
 
 
@@ -43,14 +52,46 @@ class PiProcessConfig:
     """Everything the child needs, resolved from config."""
 
     command: str = "pi"
-    workspace: str = "./pi_workspace"
+    workspace: str = DEFAULT_WORKSPACE
     tools: list[str] = field(default_factory=lambda: [
         "read", "write", "edit", "grep", "find", "ls",
     ])
-    policy_extension: str | None = "./pi_extensions/workspace_guard.ts"
+    policy_extension: str | None = BUILTIN_GUARD
     no_session: bool = True
     restart_backoff_s: list[int] = field(default_factory=lambda: [1, 2, 4, 8, 30])
     model: str = ""
+
+
+def packaged_guard_path() -> str:
+    """Absolute path of the shipped ``workspace_guard.ts``.
+
+    Resolved through ``importlib.resources`` so it is correct from the source
+    tree, an editable install, and an unpacked wheel — not relative to the
+    process CWD, which silently disabled the guard (ADR-0016). A zipped or
+    frozen layout whose resource is not a real file fails the ``start()`` check
+    loudly rather than disabling the guard.
+    """
+    resource = resources.files(__package__).joinpath(_GUARD_RESOURCE)
+    return os.path.abspath(str(resource))
+
+
+def resolve_policy_extension(spec: str | None) -> str | None:
+    """Resolve the guard specifier to an absolute path, or ``None``.
+
+    ``None`` disables the guard; ``BUILTIN_GUARD`` selects the packaged one.
+    Anything else is treated as a user path and made absolute with the user's
+    home expanded.
+    """
+    if spec is None:
+        return None
+    if spec == BUILTIN_GUARD:
+        return packaged_guard_path()
+    return os.path.abspath(os.path.expanduser(spec))
+
+
+def resolve_workspace(spec: str) -> str:
+    """Resolve the workspace path. Pure: it does not create the directory."""
+    return os.path.abspath(os.path.expanduser(spec))
 
 
 class PiProcess:
@@ -87,8 +128,9 @@ class PiProcess:
         if self.cfg.tools:
             argv += ["--tools", ",".join(self.cfg.tools)]
         argv.append("--no-extensions")
-        if self.cfg.policy_extension:
-            argv += ["-e", os.path.abspath(self.cfg.policy_extension)]
+        guard = resolve_policy_extension(self.cfg.policy_extension)
+        if guard:
+            argv += ["-e", guard]
         argv += ["--no-approve", "-nc"]
         if self.cfg.model:
             argv += ["--model", self.cfg.model]
@@ -102,12 +144,27 @@ class PiProcess:
         return env
 
     async def start(self) -> None:
+        # Check the guard before the binary: a missing guard is a confinement
+        # failure, not a missing tool, and must fail closed (ADR-0016).
+        guard = resolve_policy_extension(self.cfg.policy_extension)
+        if guard is None:
+            logger.warning(
+                "pi workspace guard is disabled (policy_extension: null); "
+                "file tools are unconfined. See ADR-0012."
+            )
+        elif not os.path.isfile(guard):
+            raise FileNotFoundError(
+                f"pi workspace guard not found: {guard}. Set "
+                f"agents.<id>.pi.policy_extension to \"{BUILTIN_GUARD}\" to use "
+                f"the shipped guard, or fix the path."
+            )
+
         if shutil.which(self.cfg.command) is None and not os.path.isabs(self.cfg.command):
             raise FileNotFoundError(
                 f"pi command {self.cfg.command!r} not found on PATH. "
                 f"Run scripts/setup_pi.sh, or set agents.<id>.pi.command."
             )
-        workspace = os.path.abspath(self.cfg.workspace)
+        workspace = resolve_workspace(self.cfg.workspace)
         os.makedirs(workspace, exist_ok=True)
 
         self._closed = False
