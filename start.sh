@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # AI Assistant launcher.
 #
 # Sets up the environment if needed, then starts the assistant.
