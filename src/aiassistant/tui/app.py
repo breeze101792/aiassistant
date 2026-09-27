@@ -53,10 +53,12 @@ class TuiApp:
     """Owns the bridge, the view model, the curses screen, and the input loop."""
 
     def __init__(self, url: str, token: str, identity: str,
-                 renderer: Renderer | None = None, bridge: Bridge | None = None):
+                 renderer: Renderer | None = None, bridge: Bridge | None = None,
+                 hotwords: list[str] | None = None):
         self.model = OrbViewModel()
         self.ui = UIState()
-        self.renderer = renderer or Renderer(identity=identity)
+        self.renderer = renderer or Renderer(identity=identity,
+                                             hotwords=hotwords)
         self._bridge = bridge
         self._url = url
         self._token = token

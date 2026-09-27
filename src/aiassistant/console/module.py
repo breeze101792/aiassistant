@@ -29,6 +29,9 @@ class ConsoleModule(BaseModule):
         super().__init__(bus, config)
         console_cfg = config.get("console", {})
         self.prompt = console_cfg.get("prompt", "> ")
+        # The wake phrases, so /help can name the one the user must actually
+        # say instead of describing the mechanic in the abstract.
+        self.hotwords = config.get("voice", {}).get("hotwords", [])
         self._running = False
         self._show_thinking = False
         self._read_task: asyncio.Task | None = None
@@ -339,8 +342,23 @@ class ConsoleModule(BaseModule):
         print("  /log [debug|info|warning|error|off]  Show or set log level")
         print("  /clear     Clear the terminal")
         print()
-        print("Hotwords: say a hotword to activate audio input, then speak your message.")
+        print(self._hotword_line())
         print()
+
+    def _hotword_line(self) -> str:
+        """The wake-phrase line for /help, naming the configured phrases.
+
+        Printed from config, never hard-coded, so the help says the phrase the
+        voice pipeline actually listens for. An empty list means the recognizer
+        does not gate on a phrase, so the line says how input works instead.
+        """
+        phrases = [str(h) for h in (self.hotwords or []) if str(h).strip()]
+        if not phrases:
+            return ("Hotwords: none configured; audio input is not gated on a "
+                    "wake phrase.")
+        quoted = ", ".join(f'"{p}"' for p in phrases)
+        return (f"Hotwords: say {quoted} to activate audio input, "
+                f"then speak your message.")
 
     def _print_status(self):
         modules = self.bus.registry.list_all()

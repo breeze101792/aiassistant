@@ -316,3 +316,38 @@ class TestTerminalOwnership:
         cli.suspend_terminal()
         cli.suspend_terminal()
         assert cli._owns_terminal is False
+
+
+class TestHelpHotword:
+    """REQ-WAKE-004: /help names the configured wake phrase, not just the mechanic.
+
+    The phrase is read from voice.hotwords, so the help states the phrase the
+    voice pipeline actually listens for.
+    """
+
+    def _cli(self, config=None):
+        from aiassistant.bus.bus import MessageBus
+        return ConsoleModule(MessageBus(), config or {})
+
+    def test_help_names_the_default_hotword(self, capsys):
+        from aiassistant.config import load_config
+        self._cli(load_config())._print_help()
+        out = capsys.readouterr().out
+        assert 'say "hey jarvis"' in out
+
+    def test_help_names_a_custom_hotword(self, capsys):
+        self._cli({"voice": {"hotwords": ["ok computer"]}})._print_help()
+        assert 'say "ok computer"' in capsys.readouterr().out
+
+    def test_help_lists_every_hotword(self):
+        cli = self._cli({"voice": {"hotwords": ["hey jarvis", "computer"]}})
+        line = cli._hotword_line()
+        assert '"hey jarvis"' in line and '"computer"' in line
+
+    def test_no_hotwords_says_input_is_not_gated(self):
+        cli = self._cli({"voice": {"hotwords": []}})
+        assert "none configured" in cli._hotword_line()
+
+    def test_blank_hotwords_are_ignored(self):
+        cli = self._cli({"voice": {"hotwords": ["", "  "]}})
+        assert "none configured" in cli._hotword_line()

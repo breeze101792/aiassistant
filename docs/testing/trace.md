@@ -107,6 +107,7 @@ All 93 requirements from
 | REQ-CONSOLE-004 | verified | T-0904 | mac, linux |
 | REQ-CONSOLE-005 | verified | T-0905 | host |
 | REQ-CONSOLE-006 | verified | T-0907 | host |
+| REQ-CONSOLE-007 | verified | T-0908 | host |
 | REQ-FRONTEND-001 | verified | T-1201, T-1210 | host |
 | REQ-FRONTEND-002 | verified | T-1202 | host |
 | REQ-FRONTEND-003 | verified | T-1203 | host |
@@ -244,6 +245,7 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 | T-0905 | Streaming render works | REQ-CONSOLE-005 |
 | T-0906 | `/stop` produces a cancelled turn | REQ-CONV-003, REQ-WAKE-005 |
 | T-0907 | Headless autodetect | REQ-CONSOLE-006 |
+| T-0908 | Help names the wake phrase | REQ-CONSOLE-007 |
 | T-1201 | Frontend enum and aliases | REQ-FRONTEND-001 |
 | T-1202 | Frontend precedence | REQ-FRONTEND-002 |
 | T-1203 | auto resolution by host | REQ-FRONTEND-003 |

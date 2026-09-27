@@ -225,3 +225,29 @@ class TestNoQt:
                                 capture_output=True, text=True)
         assert result.returncode == 0, result.stderr
         assert result.stdout.strip() == "False"
+
+
+class TestHelpHotword:
+    """The TUI help overlay names the configured wake phrase."""
+
+    def test_help_line_names_the_hotword(self):
+        from aiassistant.tui.render import Renderer
+        r = Renderer(identity="Jarvis", hotwords=["hey jarvis"])
+        assert 'say "hey jarvis"' in r._help_lines()[0]
+
+    def test_help_omits_the_line_when_unconfigured(self):
+        from aiassistant.tui.render import Renderer
+        r = Renderer(identity="Jarvis", hotwords=[])
+        assert not r._hotword_line()
+        assert not any("Hotword" in line for line in r._help_lines())
+
+    def test_help_width_fits_the_longest_line(self):
+        from aiassistant.tui.render import Renderer
+        r = Renderer(hotwords=["a very long wake phrase indeed"])
+        assert max(len(line) for line in r._help_lines()) <= 200
+
+    def test_config_supplies_hotwords_to_the_app(self):
+        from aiassistant.tui.app import TuiApp
+        app = TuiApp(url="ws://127.0.0.1:1", token="", identity="J",
+                     bridge=FakeBridge(), hotwords=["hey jarvis"])
+        assert app.renderer.hotwords == ["hey jarvis"]

@@ -192,9 +192,11 @@ def _build_entry_rows(entries: list[dict], identity: str, body_width: int) -> li
 class Renderer:
     """Draws the whole screen from the view model on demand."""
 
-    def __init__(self, identity: str = tokens.DEFAULT_IDENTITY, glyphs: dict | None = None):
+    def __init__(self, identity: str = tokens.DEFAULT_IDENTITY, glyphs: dict | None = None,
+                 hotwords: list[str] | None = None):
         self.identity = identity or tokens.DEFAULT_IDENTITY
         self.glyphs = glyphs or tokens.select_glyphs()
+        self.hotwords = [str(h) for h in (hotwords or []) if str(h).strip()]
         self._colors = False
         self._bg = -1
         self._state_color: tuple[str, int] | None = None
@@ -561,15 +563,31 @@ class Renderer:
         "/help       show this help",
     )
 
+    def _help_lines(self) -> tuple[str, ...]:
+        """The help overlay, with the configured wake phrase named.
+
+        The phrase comes from config, never hard-coded, so the overlay says what
+        the voice pipeline actually listens for.
+        """
+        line = self._hotword_line()
+        return (line,) + self.HELP_LINES if line else self.HELP_LINES
+
+    def _hotword_line(self) -> str:
+        if not self.hotwords:
+            return ""
+        quoted = ", ".join(f'"{p}"' for p in self.hotwords)
+        return f"Hotword     say {quoted} to activate audio input"
+
     def _draw_help(self, win, rows: int, cols: int) -> None:
-        width = min(cols, max(len(line) for line in self.HELP_LINES) + 4)
-        height = min(rows, len(self.HELP_LINES) + 2)
+        lines = self._help_lines()
+        width = min(cols, max(len(line) for line in lines) + 4)
+        height = min(rows, len(lines) + 2)
         top = max(0, (rows - height) // 2)
         left = max(0, (cols - width) // 2)
         blank = " " * width
         for i in range(height):
             self._safe(win, top + i, left, blank, ATTR_PRIMARY)
-        for i, line in enumerate(self.HELP_LINES):
+        for i, line in enumerate(lines):
             if i + 1 >= height:
                 break
             self._safe(win, top + 1 + i, left + 2, clip(line, width - 4),

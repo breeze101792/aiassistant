@@ -101,6 +101,7 @@ on-target audio rig (loopback or fixture) · `inspection`.
 | REQ-CONSOLE-004 | Text-only can be forced. | `display.mode: none` (legacy `console`) starts no visual shell even when a GUI is available; text still runs. | [A] | mac, linux |
 | REQ-CONSOLE-005 | Streaming in console. | Assistant text renders incrementally from deltas. | [A] | host |
 | REQ-CONSOLE-006 | Headless autodetect. | `display.mode: auto` starts no visual shell on a machine with no display server, and the GUI orb when one is present. `AIASSISTANT_DISPLAY_OFF` forces `none` unless the CLI names a frontend. | [A] | host, mac, linux |
+| REQ-CONSOLE-007 | Help names the wake phrase. | `/help` (and the TUI help overlay) prints the configured `voice.hotwords`, never a hard-coded phrase; with none configured it says input is not gated. | [A] | host |
 
 ## Frontends
 

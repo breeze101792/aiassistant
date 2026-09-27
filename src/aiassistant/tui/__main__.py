@@ -36,8 +36,8 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def load_tui_config(path: str, url_override: str | None) -> tuple[str, str, str]:
-    """Read only the keys the TUI needs: bus and the active agent's identity.
+def load_tui_config(path: str, url_override: str | None) -> tuple[str, str, str, list[str]]:
+    """Read only the keys the TUI needs: bus, identity, and wake phrases.
 
     Uses the same defaults-plus-local loader, so a bus port or identity set in
     config.yaml reaches this process too; the read stays narrow, so a config
@@ -62,7 +62,22 @@ def load_tui_config(path: str, url_override: str | None) -> tuple[str, str, str]
 
     token = bus_cfg.get("remote_auth_token") or ""
     identity = _active_identity(raw)
-    return url, str(token), identity
+    return url, str(token), identity, _hotwords(raw)
+
+
+def _hotwords(raw: dict) -> list[str]:
+    """The configured wake phrases, for the help overlay.
+
+    Read from ``voice.hotwords`` so the overlay names the phrase the voice
+    pipeline listens for. Never hard-coded.
+    """
+    voice = raw.get("voice")
+    if not isinstance(voice, dict):
+        return []
+    phrases = voice.get("hotwords")
+    if not isinstance(phrases, list):
+        return []
+    return [str(p) for p in phrases if str(p).strip()]
 
 
 def _active_identity(raw: dict) -> str:
@@ -102,12 +117,13 @@ def main(argv=None) -> int:
         print(f"cannot start the TUI: {reason}", file=sys.stderr)
         return EXIT_BAD_TERMINAL
 
-    url, token, identity = load_tui_config(args.config, args.url)
+    url, token, identity, hotwords = load_tui_config(args.config, args.url)
 
     from .app import TuiApp
 
     try:
-        return asyncio.run(TuiApp(url=url, token=token, identity=identity).run())
+        return asyncio.run(TuiApp(url=url, token=token, identity=identity,
+                                  hotwords=hotwords).run())
     except KeyboardInterrupt:
         return EXIT_OK
 

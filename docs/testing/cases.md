@@ -109,6 +109,7 @@ Coverage and the reverse T → REQ map: [trace.md](trace.md).
 | T-1302 | Local file overrides only its keys | REQ-CFG-007 | host | A `config.yaml` with one key | `load_config()` | That key changes; every other default is intact | `tests/test_config.py` |
 | T-1303 | Example matches the defaults | REQ-CFG-008 | host | — | Parse both | Same keys and values; no drift | `tests/test_config.py` |
 | T-0907 | Headless autodetect | REQ-CONSOLE-006 | host | No display-server env; `display.mode: auto` | Resolve the display mode | Console is chosen; with a display var set, orb is chosen; `AIASSISTANT_DISPLAY_OFF` forces console; `--mode ui` overrides it | `tests/test_display.py` |
+| T-0908 | Help names the wake phrase | REQ-CONSOLE-007 | host | `voice.hotwords` set and empty | Run `/help` (console) and open the TUI help | The configured phrase is printed, quoted; with none, the line says input is not gated; no hard-coded phrase | `tests/test_console.py`, `tests/test_tui.py` |
 | T-0906 | `/stop` produces a cancelled turn | REQ-CONV-003, REQ-WAKE-005 | host | Turn in flight | Issue `/stop` | Publishes `command.agent.interrupt`; turn ends cancelled; no final | console.md Commands / flows.md (c) |
 
 ## Scheduler — `tests/test_scheduler.py`
