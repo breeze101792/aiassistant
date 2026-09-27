@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orb UI — Reference Mockup</title>
+<style>
+/* ============================================================
+   TOKENS — mirrors docs/ui/tokens.md (Theme.* QML names).
+   CSS custom properties use the same names so a coder can map
+   them 1:1.
+   ============================================================ */
+:root {
+  --colorBg: #0A0C10;
+  --colorSurface: #11151C;
+  --colorSurfaceRaised: #171C25;
+  --colorSurfaceHover: #1E2531;
+  --colorSurfaceActive: #232B39;
+  --colorBorder: #232A37;
+  --colorBorderStrong: #333C4D;
+  --colorTextPrimary: #E6EAF2;
+  --colorTextSecondary: #98A2B3;
+  --colorTextMuted: #7C8698;
+  --colorAccent: #4CC2FF;
+  --colorAccentHover: #6FD0FF;
+  --colorAccentPressed: #2FA8E8;
+  --colorFocus: #8BD5FF;
+  --colorDanger: #F87171;
+  --colorWarning: #FBBF24;
+  --colorSuccess: #34D399;
+
+  --space1: 4px; --space2: 8px; --space3: 12px; --space4: 16px;
+  --space5: 24px; --space6: 32px; --space7: 48px; --space8: 64px;
+
+  --radiusSm: 6px; --radiusMd: 10px; --radiusLg: 16px;
+  --radiusXl: 24px; --radiusPill: 999px;
+
+  --durInstant: 80ms; --durFast: 140ms; --durBase: 220ms;
+  --durSlow: 420ms; --durStateFade: 320ms;
+
+  --fontDisplay: "Inter", "SF Pro Display", "Noto Sans", system-ui, sans-serif;
+  --fontBody: "Inter", "SF Pro Text", "Noto Sans", system-ui, sans-serif;
+  --fontMono: "JetBrains Mono", "SF Mono", "DejaVu Sans Mono", monospace;
+
+  --orbSizeCompact: 112px;
+  --orbSizeExpanded: 64px;
+  --orbFieldRatio: 1.65;
+  --orbRingRatio: 0.44;
+  --orbCoreRatio: 0.28;
+}
+
+/* State color tokens, exactly as in tokens.md. Used by the JS
+   state applier and by the orb layers. */
+[data-state="idle"]        { --hue:#3E6480; --hueAlt:#5B87A6; --glow:.35; --levelReact:0; }
+[data-state="connecting"]  { --hue:#1E4A73; --hueAlt:#2E5C8A; --glow:.30; --levelReact:0; }
+[data-state="muted"]       { --hue:#4B5563; --hueAlt:#6B7280; --glow:.22; --levelReact:0; }
+[data-state="listening"]   { --hue:#2DD4A7; --hueAlt:#5CE8C4; --glow:.30; --levelReact:1; }
+[data-state="transcribing"]{ --hue:#38BDF8; --hueAlt:#6DD3FA; --glow:.40; --levelReact:0; }
+[data-state="thinking"]    { --hue:#9B7BF0; --hueAlt:#B9A0FA; --glow:.42; --levelReact:0; }
+[data-state="speaking"]    { --hue:#FBBF24; --hueAlt:#FCD34D; --glow:.30; --levelReact:1; }
+[data-state="error"]       { --hue:#F87171; --hueAlt:#FCA5A5; --glow:.45; --levelReact:0; }
+[data-state="backend-down"]{ --hue:#B45309; --hueAlt:#D97706; --glow:.30; --levelReact:0; }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background:
+    radial-gradient(1200px 700px at 12% -10%, #131a26 0%, transparent 60%),
+    radial-gradient(900px 600px at 100% 110%, #101722 0%, transparent 55%),
+    var(--colorBg);
+  color: var(--colorTextPrimary);
+  font-family: var(--fontBody);
+  font-size: 14px;
+  line-height: 1.55;
+  min-height: 100vh;
+  padding: var(--space6);
+  -webkit-font-smoothing: antialiased;
+}
+
+.page-head { max-width: 1080px; margin: 0 auto var(--space6); }
+.page-head h1 {
+  font-family: var(--fontDisplay); font-size: 24px; font-weight: 600;
+  margin: 0 0 var(--space1);
+}
+.page-head p { color: var(--colorTextSecondary); margin: 0; max-width: 720px; }
+.page-head code { font-family: var(--fontMono); color: var(--colorTextMuted); }
+
+/* ============================================================
+   CONTROL STRIP — viewer controls (not part of the orb design)
+   ============================================================ */
+.toolbar {
+  max-width: 1080px; margin: 0 auto var(--space5);
+  display: flex; flex-wrap: wrap; gap: var(--space2);
+  align-items: center;
+}
+.toolbar .chip, .toolbar .toggle {
+  font-family: var(--fontBody); font-size: 12px; font-weight: 500;
+  color: var(--colorTextSecondary);
+  background: var(--colorSurfaceRaised);
+  border: 1px solid var(--colorBorder);
+  border-radius: var(--radiusPill);
+  padding: 6px 12px; cursor: pointer;
+  transition: background var(--durFast), color var(--durFast), border-color var(--durFast);
+}
+.toolbar .chip:hover, .toolbar .toggle:hover {
+  background: var(--colorSurfaceHover); color: var(--colorTextPrimary);
+}
+.toolbar .chip[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--colorAccent) 18%, var(--colorSurfaceRaised));
+  border-color: var(--colorAccent);
+  color: var(--colorTextPrimary);
+}
+.toolbar .chip:focus-visible, .toolbar .toggle:focus-visible {
+  outline: 2px solid var(--colorFocus); outline-offset: 2px;
+}
+.toolbar .sep { width: 1px; height: 24px; background: var(--colorBorder); margin: 0 var(--space1); }
+
+/* ============================================================
+   STAGE
+   ============================================================ */
+.stage {
+  max-width: 1080px; margin: 0 auto;
+  display: flex; flex-wrap: wrap; gap: var(--space6);
+  align-items: flex-start;
+}
+.col { display: flex; flex-direction: column; gap: var(--space3); }
+.col-label {
+  font-size: 12px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--colorTextMuted);
+}
+.stage-note { font-size: 12px; color: var(--colorTextMuted); max-width: 320px; }
+
+/* Wallpaper behind windows, so transparency is visible. */
+.desktop {
+  position: relative; border-radius: var(--radiusXl); padding: var(--space5);
+  background:
+    linear-gradient(135deg, #1b2433 0%, #2a3346 40%, #3b2f4a 100%);
+  box-shadow: inset 0 0 0 1px #ffffff10;
+}
+
+/* ============================================================
+   COMPACT WINDOW
+   ============================================================ */
+.window-compact {
+  width: 160px; height: 160px;
+  position: relative; display: grid; place-items: center;
+  /* transparent frameless window: no background */
+}
+.window-compact .state-label {
+  position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; color: var(--colorTextSecondary);
+  background: color-mix(in srgb, var(--colorBg) 70%, transparent);
+  padding: 2px 8px; border-radius: var(--radiusPill);
+  opacity: 0; transition: opacity var(--durFast);
+  white-space: nowrap;
+}
+.window-compact:hover .state-label,
+.window-compact:focus-within .state-label { opacity: 1; }
+.window-compact .mini-controls {
+  position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: var(--space2); opacity: 0; transition: opacity var(--durFast);
+}
+.window-compact:hover .mini-controls,
+.window-compact:focus-within .mini-controls { opacity: 1; }
+
+/* Opaque fallback (Wayland degradation) */
+body.opaque-fallback .window-compact {
+  width: 160px; height: 160px; border-radius: var(--radiusXl);
+  background: var(--colorBg);
+  box-shadow: inset 0 0 0 1px var(--colorBorder);
+}
+body.opaque-fallback .window-expanded {
+  background: var(--colorBg); box-shadow: 0 8px 32px #0009, inset 0 0 0 1px var(--colorBorder);
+}
+
+/* ============================================================
+   THE ORB
+   ============================================================ */
+.orb {
+  --size: var(--orbSizeCompact);
+  --level: 0;
+  width: var(--size); height: var(--size);
+  position: relative; flex: none;
+  transition: opacity var(--durStateFade);
+}
+.orb--header { --size: var(--orbSizeExpanded); }
+
+.orb__field, .orb__body, .orb__core, .orb__ring, .orb__ring--alt,
+.orb__chord, .orb__badge, .orb__ripple {
+  position: absolute; border-radius: 50%;
+}
+
+/* field = soft halo */
+.orb__field {
+  inset: calc((1 - var(--orbFieldRatio)) * 50%);
+  background: radial-gradient(circle,
+     color-mix(in srgb, var(--hueAlt) 60%, transparent) 0%,
+     color-mix(in srgb, var(--hue) 25%, transparent) 42%,
+     transparent 70%);
+  opacity: calc(var(--glow) + var(--level) * 0.45);
+  transition: background var(--durStateFade), opacity var(--durBase);
+  filter: blur(2px);
+}
+
+/* body = state disc, two-stop radial from alt rim to base core */
+.orb__body {
+  inset: 0;
+  background: radial-gradient(circle at 50% 42%,
+     var(--hue) 0%, var(--hue) 48%, var(--hueAlt) 100%);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--hue) 35%, transparent);
+  transition: background var(--durStateFade),
+              transform 90ms linear;
+  transform: scale(calc(1 + var(--level) * var(--levelReact) * 0.07));
+}
+
+/* core = bright center */
+.orb__core {
+  inset: calc((1 - var(--orbCoreRatio)) * 50%);
+  background: radial-gradient(circle,
+     #ffffffcc 0%, var(--hueAlt) 55%, transparent 100%);
+  opacity: calc(.35 + var(--level) * 0.6);
+  transition: background var(--durStateFade), opacity var(--durBase);
+}
+
+/* ring base: solid */
+.orb__ring {
+  inset: calc((1 - var(--orbRingRatio) * 2) * 50%);
+  border: 2px solid var(--hueAlt);
+  background: transparent;
+  transition: border-color var(--durStateFade), transform var(--durBase);
+  transform: scale(calc(1 - var(--level) * 0.18 * var(--levelReact)));
+}
+
+/* second ring layer for dual/dashed forms via conic gradients */
+.orb__ring--alt {
+  inset: calc((1 - var(--orbRingRatio) * 2) * 50%);
+  background: conic-gradient(from 0deg, var(--hueAlt) 0 50%, transparent 50% 100%);
+  -webkit-mask: radial-gradient(circle, transparent 0 47%, #000 47% 53%, transparent 53%);
+          mask: radial-gradient(circle, transparent 0 47%, #000 47% 53%, transparent 53%);
+  opacity: 0; /* off unless a form needs it */
+}
+/* the base ring is hidden when the conic form supplies the ring */
+[data-state="transcribing"] .orb__ring,
+[data-state="thinking"] .orb__ring,
+[data-state="connecting"] .orb__ring { border-color: transparent; }
+
+/* --- form: arc (thinking) --- */
+[data-state="thinking"] .orb__ring--alt {
+  opacity: 1;
+  background: conic-gradient(from 0deg, transparent 0 62%, var(--hueAlt) 62% 100%);
+  animation: spin 1400ms linear infinite;
+}
+/* --- form: dual counter-rotating (transcribing) --- */
+[data-state="transcribing"] .orb__ring--alt {
+  opacity: 1;
+  background: conic-gradient(from 0deg,
+     var(--hueAlt) 0 30%, transparent 30% 50%,
+     var(--hueAlt) 50% 80%, transparent 80% 100%);
+  animation: spin 700ms linear infinite;
+}
+/* --- form: dashed (connecting) --- */
+[data-state="connecting"] .orb__ring--alt {
+  opacity: 1;
+  background: repeating-conic-gradient(from 0deg,
+     var(--hueAlt) 0 8deg, transparent 8deg 20deg);
+  animation: spin 2400ms linear infinite;
+}
+
+/* --- chord: slash (muted) / bar (backend-down) --- */
+.orb__chord {
+  inset: 0; border-radius: 50%; background: transparent; opacity: 0;
+  transition: opacity var(--durFast);
+}
+[data-state="muted"] .orb__chord {
+  opacity: 1;
+  background: linear-gradient(to bottom right,
+     transparent calc(50% - 1.5px), var(--hueAlt) calc(50% - 1.5px),
+     var(--hueAlt) calc(50% + 1.5px), transparent calc(50% + 1.5px));
+}
+[data-state="backend-down"] .orb__chord {
+  opacity: 1;
+  background: linear-gradient(to bottom,
+     transparent calc(50% - 1.5px), var(--hueAlt) calc(50% - 1.5px),
+     var(--hueAlt) calc(50% + 1.5px), transparent calc(50% + 1.5px));
+}
+
+/* --- ripples (speaking) --- */
+.orb__ripple {
+  inset: 0; border: 2px solid var(--hueAlt); opacity: 0;
+}
+[data-state="speaking"] .orb__ripple { animation: ripple 1000ms ease-out infinite; }
+[data-state="speaking"] .orb__ripple:nth-child(2) { animation-delay: 500ms; }
+
+/* --- badge (!) for error / backend-down --- */
+.orb__badge {
+  inset: auto auto -2px -2px; width: 22px; height: 22px;
+  display: grid; place-items: center; border-radius: 50%;
+  font-size: 13px; font-weight: 700; opacity: 0;
+  background: var(--colorDanger); color: #1a0c0c;
+  transition: opacity var(--durFast);
+}
+[data-state="error"] .orb__badge { opacity: 1; }
+[data-state="backend-down"] .orb__badge {
+  opacity: 1; background: var(--colorWarning); color: #2a1c02;
+}
+
+/* --- motion: breath (idle) --- */
+[data-state="idle"] .orb__body { animation: breath 4000ms ease-in-out infinite; }
+/* --- motion: pulse error / backend-down --- */
+[data-state="error"] .orb__body { animation: pulse 1800ms ease-in-out infinite; }
+[data-state="error"] .orb__ring--alt {
+  opacity: 1;
+  background: conic-gradient(from 0deg,
+     transparent 0 20%, var(--hueAlt) 20% 26%, transparent 26% 40%,
+     var(--hueAlt) 40% 52%, transparent 52% 68%,
+     var(--hueAlt) 68% 80%, transparent 80% 100%);
+  animation: spin 1800ms linear infinite;
+}
+[data-state="backend-down"] .orb__body { animation: pulse 2600ms ease-in-out infinite; }
+/* muted is still */
+[data-state="muted"] .orb__body { animation: none; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes breath {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.03); }
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(.94); }
+  50%      { transform: scale(1.0); }
+}
+@keyframes ripple {
+  0%   { transform: scale(.7); opacity: .8; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* reduced motion: freeze all animation */
+body.reduced-motion .orb *,
+body.reduced-motion .orb__body,
+body.reduced-motion .orb__ring--alt,
+body.reduced-motion .orb__ripple { animation: none !important; }
+body.reduced-motion .orb__body { transform: scale(1); }
+body.reduced-motion .orb__ring--alt { opacity: 1; }
+
+/* grayscale viewer toggle: proves state is not color-only */
+body.grayscale .stage .desktop { filter: grayscale(1); }
+
+/* Motes (thinking): three faint dots orbiting */
+.orb__motes { position: absolute; inset: 0; opacity: 0; transition: opacity var(--durBase); }
+[data-state="thinking"] .orb__motes { opacity: 1; animation: spin 3000ms linear infinite; }
+.orb__motes span {
+  position: absolute; width: 4px; height: 4px; border-radius: 50%;
+  background: var(--hueAlt); opacity: .8;
+}
+.orb__motes span:nth-child(1) { top: -2px; left: 50%; }
+.orb__motes span:nth-child(2) { bottom: 6px; left: 6px; }
+.orb__motes span:nth-child(3) { bottom: 6px; right: 6px; }
+
+/* ============================================================
+   EXPANDED WINDOW
+   ============================================================ */
+.window-expanded {
+  width: 420px; max-width: 100%; height: 560px;
+  display: flex; flex-direction: column;
+  border-radius: var(--radiusXl);
+  background: color-mix(in srgb, var(--colorSurface) 92%, transparent);
+  box-shadow: 0 8px 32px #00000099, inset 0 0 0 1px var(--colorBorder);
+  overflow: hidden;
+}
+.win-header {
+  display: flex; align-items: center; gap: var(--space3);
+  padding: var(--space3) var(--space4); min-height: 64px;
+  border-bottom: 1px solid var(--colorBorder);
+}
+.win-header .id-name { font-family: var(--fontDisplay); font-size: 16px; font-weight: 600; }
+.win-header .id-state { font-size: 11px; color: var(--colorTextMuted); }
+.win-header .spacer { flex: 1; }
+
+.badge {
+  font-size: 12px; font-weight: 500; padding: 4px 10px;
+  border-radius: var(--radiusSm); background: var(--colorSurfaceRaised);
+  color: var(--colorTextSecondary); border: 1px solid var(--colorBorder);
+  white-space: nowrap;
+}
+.badge.warn { color: var(--colorWarning); border-color: color-mix(in srgb, var(--colorWarning) 40%, var(--colorBorder)); }
+
+/* transcript */
+.transcript {
+  flex: 1; overflow-y: auto; padding: var(--space3) var(--space4);
+  display: flex; flex-direction: column; gap: var(--space2);
+  scrollbar-width: thin;
+}
+.transcript::-webkit-scrollbar { width: 8px; }
+.transcript::-webkit-scrollbar-thumb { background: var(--colorBorderStrong); border-radius: 4px; }
+.row { display: grid; grid-template-columns: 72px 1fr auto; gap: var(--space3); padding: var(--space2) 0; }
+.row .role { font-size: 12px; font-weight: 500; color: var(--colorTextSecondary); text-align: right; }
+.row .body { font-size: 14px; color: var(--colorTextPrimary); }
+.row .time { font-size: 11px; color: var(--colorTextMuted); white-space: nowrap; }
+.row.user .body { border-left: 2px solid var(--colorBorderStrong); padding-left: var(--space2); }
+.row.thinking .body { color: var(--colorTextMuted); font-style: italic; font-size: 12px; }
+.row.tool .body { font-family: var(--fontMono); font-size: 12px; color: var(--colorTextSecondary); }
+.row.error .role { color: var(--colorDanger); }
+.row.error .body { border-left: 2px solid var(--colorDanger); padding-left: var(--space2); }
+.row .class-chip {
+  display: inline-block; font-size: 11px; padding: 1px 6px; margin-right: 6px;
+  border-radius: var(--radiusSm); background: var(--colorSurfaceRaised);
+  color: var(--colorDanger); border: 1px solid var(--colorBorder);
+}
+.row .hint { display: block; font-size: 11px; color: var(--colorTextSecondary); margin-top: 2px; }
+.stream-cursor {
+  display: inline-block; width: 7px; height: 14px; margin-left: 2px;
+  background: var(--colorAccent); vertical-align: text-bottom;
+  animation: blink 1000ms steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* composer */
+.composer {
+  display: flex; gap: var(--space2); align-items: flex-end;
+  padding: var(--space3) var(--space4);
+  border-top: 1px solid var(--colorBorder);
+}
+.composer .field {
+  flex: 1; min-height: 40px; display: flex; align-items: center;
+  padding: 0 var(--space3); border-radius: var(--radiusPill);
+  background: var(--colorSurfaceRaised);
+  border: 1px solid transparent; color: var(--colorTextMuted); font-size: 14px;
+}
+.iconbtn {
+  width: 40px; height: 40px; flex: none; display: grid; place-items: center;
+  border: none; border-radius: var(--radiusMd); cursor: default;
+  background: var(--colorSurfaceRaised); color: var(--colorTextPrimary); font-size: 16px;
+}
+.iconbtn.accent { background: var(--colorAccent); color: #04222f; }
+.iconbtn.small { width: 32px; height: 32px; font-size: 14px; background: transparent; color: var(--colorTextSecondary); border: 1px solid var(--colorBorder); }
+.iconbtn.danger { color: var(--colorDanger); }
+.iconbtn.ghost { background: transparent; border: 1px solid var(--colorBorder); }
+
+/* control bar */
+.controlbar {
+  display: flex; align-items: center; gap: var(--space2);
+  padding: var(--space2) var(--space4) var(--space3);
+}
+.controlbar .spacer { flex: 1; }
+.controlbar .btn-label { font-size: 12px; color: var(--colorTextSecondary); margin-left: -2px; }
+.control { display: inline-flex; align-items: center; gap: 4px; }
+
+.legend { max-width: 1080px; margin: var(--space6) auto 0; }
+.legend h2 { font-size: 14px; font-family: var(--fontDisplay); margin: 0 0 var(--space2); }
+.legend table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.legend th, .legend td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--colorBorder); color: var(--colorTextSecondary); vertical-align: top; }
+.legend th { color: var(--colorTextMuted); font-weight: 600; }
+.legend td:first-child { color: var(--colorTextPrimary); font-family: var(--fontMono); white-space: nowrap; }
+.legend .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <h1>Orb UI — Reference Mockup</h1>
+  <p>
+    A static embodiment of <code>docs/ui/</code>. It is not production code:
+    it exists so the states, tokens, layout, and motion are visible and reviewable.
+    Cycle all nine states, toggle grayscale to check the non-color cues, and toggle
+    the opaque fallback to see the Wayland degradation.
+  </p>
+</header>
+
+<div class="toolbar" role="toolbar" aria-label="Mockup viewer controls">
+  <button class="chip" id="prev" type="button">&#8592; prev state</button>
+  <button class="chip" id="next" type="button">next state &#8594;</button>
+  <button class="chip" id="auto" type="button" aria-pressed="false">auto-cycle</button>
+  <span class="sep" aria-hidden="true"></span>
+  <button class="toggle" id="grayscale" type="button" aria-pressed="false">grayscale</button>
+  <button class="toggle" id="reduced" type="button" aria-pressed="false">reduced motion</button>
+  <button class="toggle" id="opaque" type="button" aria-pressed="false">opaque fallback</button>
+</div>
+
+<main class="stage">
+
+  <!-- COMPACT -->
+  <section class="col" aria-label="Compact ambient window">
+    <span class="col-label">Compact ambient &middot; 112 dp</span>
+    <div class="desktop">
+      <div class="window-compact" id="compact-win">
+        <div class="orb" id="orb-compact" data-state="idle">
+          <div class="orb__field"></div>
+          <div class="orb__body"></div>
+          <div class="orb__core"></div>
+          <div class="orb__ring"></div>
+          <div class="orb__ring--alt"></div>
+          <div class="orb__chord"></div>
+          <div class="orb__motes"><span></span><span></span><span></span></div>
+          <div class="orb__ripple"></div>
+          <div class="orb__ripple"></div>
+          <div class="orb__badge">!</div>
+        </div>
+        <span class="state-label" id="compact-label">Idle</span>
+        <div class="mini-controls" aria-hidden="true">
+          <button class="iconbtn small" type="button" title="Mute">&#128263;</button>
+          <button class="iconbtn small danger" type="button" title="Stop">&#9632;</button>
+          <button class="iconbtn small" type="button" title="Show transcript">&#9645;</button>
+        </div>
+      </div>
+    </div>
+    <span class="stage-note">Hover reveals the state label and the control reveal.
+      The orb is the drag surface and the hit target.</span>
+  </section>
+
+  <!-- EXPANDED -->
+  <section class="col" aria-label="Expanded panel">
+    <span class="col-label">Expanded panel &middot; 420 &times; 560 dp</span>
+    <div class="desktop">
+      <div class="window-expanded" id="expanded-win">
+        <div class="win-header">
+          <div class="orb orb--header" data-state="idle">
+            <div class="orb__field"></div>
+            <div class="orb__body"></div>
+            <div class="orb__core"></div>
+            <div class="orb__ring"></div>
+            <div class="orb__ring--alt"></div>
+            <div class="orb__chord"></div>
+            <div class="orb__motes"><span></span><span></span><span></span></div>
+            <div class="orb__ripple"></div>
+            <div class="orb__ripple"></div>
+            <div class="orb__badge">!</div>
+          </div>
+          <div>
+            <div class="id-name">Jarvis</div>
+            <div class="id-state" id="expanded-state">Idle</div>
+          </div>
+          <div class="spacer"></div>
+          <span class="badge" id="backend-badge">native &middot; qwen3:latest</span>
+        </div>
+
+        <div class="transcript" id="transcript">
+          <div class="row user">
+            <span class="role">You</span>
+            <span class="body">What is the weather?</span>
+            <span class="time">10:14:02</span>
+          </div>
+          <div class="row thinking">
+            <span class="role">Thinking</span>
+            <span class="body">Checking the weather tool&hellip;</span>
+            <span class="time">10:14:03</span>
+          </div>
+          <div class="row tool">
+            <span class="role">get_weather</span>
+            <span class="body">&#9881; running &middot; location=&quot;local&quot;</span>
+            <span class="time">10:14:03</span>
+          </div>
+          <div class="row assistant">
+            <span class="role">Jarvis</span>
+            <span class="body">It is sunny today<span class="stream-cursor" aria-hidden="true"></span></span>
+            <span class="time">10:14:05</span>
+          </div>
+        </div>
+
+        <div class="composer">
+          <div class="field">Type a message&hellip;</div>
+          <button class="iconbtn accent" type="button" title="Send">&#8593;</button>
+          <button class="iconbtn" type="button" title="Push-to-talk">&#127908;</button>
+        </div>
+
+        <div class="controlbar">
+          <span class="control"><button class="iconbtn small" type="button" title="Mute">&#128263;</button><span class="btn-label">Mute</span></span>
+          <span class="control"><button class="iconbtn small danger" type="button" title="Stop">&#9632;</button><span class="btn-label">Stop</span></span>
+          <span class="spacer"></span>
+          <button class="iconbtn small" type="button" title="Settings">&#9881;</button>
+          <button class="iconbtn small" type="button" title="Hide transcript">&#9645;</button>
+          <button class="iconbtn small danger" type="button" title="Quit">&#10005;</button>
+        </div>
+      </div>
+    </div>
+    <span class="stage-note">Header orb, transcript with streaming cursor, composer,
+      and control bar. Error and tool rows render inline without blocking input.</span>
+  </section>
+</main>
+
+<section class="legend">
+  <h2>States</h2>
+  <table>
+    <thead><tr><th>State</th><th>Body</th><th>Ring form</th><th>Motion</th><th>Non-color cue</th></tr></thead>
+    <tbody id="legend-body"></tbody>
+  </table>
+</section>
+
+<script>
+(function () {
+  "use strict";
+
+  // The nine states, in the order orb-states.md lists them.
+  var STATES = [
+    { id: "idle",         label: "Idle",          hue: "#3E6480", alt: "#5B87A6", form: "solid",
+      motion: "Breath 4.0 s", cue: "Flat baseline; label 'Idle'" },
+    { id: "connecting",   label: "Connecting…",   hue: "#1E4A73", alt: "#2E5C8A", form: "dashed",
+      motion: "Dash rotate 2.4 s", cue: "Label 'Connecting…' + retry" },
+    { id: "muted",        label: "Muted",         hue: "#4B5563", alt: "#6B7280", form: "slash",
+      motion: "Still", cue: "Chord slash; 'Muted'" },
+    { id: "listening",    label: "Listening",     hue: "#2DD4A7", alt: "#5CE8C4", form: "solid",
+      motion: "Inward breath 1.6 s", cue: "Ring contracts on peaks" },
+    { id: "transcribing", label: "Transcribing",  hue: "#38BDF8", alt: "#6DD3FA", form: "dual",
+      motion: "Counter-rotate 0.7 s", cue: "Fastest motion; label" },
+    { id: "thinking",     label: "Thinking",      hue: "#9B7BF0", alt: "#B9A0FA", form: "arc",
+      motion: "Arc rotate 1.4 s", cue: "Motes drift; label" },
+    { id: "speaking",     label: "Speaking",      hue: "#FBBF24", alt: "#FCD34D", form: "solid+ripple",
+      motion: "Outward ripple 0.5 s", cue: "Ring expands outward" },
+    { id: "error",        label: "Error",         hue: "#F87171", alt: "#FCA5A5", form: "jagged",
+      motion: "Pulse 1.8 s", cue: "! badge; label 'Error'" },
+    { id: "backend-down", label: "Backend down",  hue: "#B45309", alt: "#D97706", form: "bar",
+      motion: "Slow pulse 2.6 s", cue: "Bar chord; warning badge" }
+  ];
+
+  var index = 0;
+  var autoTimer = null;
+  var orbs = Array.prototype.slice.call(document.querySelectorAll(".orb"));
+  var compactLabel = document.getElementById("compact-label");
+  var expandedState = document.getElementById("expanded-state");
+  var badge = document.getElementById("backend-badge");
+  var legendBody = document.getElementById("legend-body");
+
+  function applyState(i) {
+    var s = STATES[i];
+    orbs.forEach(function (orb) { orb.setAttribute("data-state", s.id); });
+    compactLabel.textContent = s.label;
+    expandedState.textContent = s.label;
+
+    if (s.id === "backend-down") {
+      badge.textContent = "backend down";
+      badge.classList.add("warn");
+    } else {
+      badge.textContent = "native · qwen3:latest";
+      badge.classList.remove("warn");
+    }
+  }
+
+  function setIndex(i) {
+    index = (i + STATES.length) % STATES.length;
+    applyState(index);
+  }
+
+  // Build the legend from the same data, so it cannot drift.
+  STATES.forEach(function (s) {
+    var tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td>' + s.id + '</td>' +
+      '<td><span class="swatch" style="background:' + s.hue + '"></span>' + s.hue + '</td>' +
+      '<td>' + s.form + '</td>' +
+      '<td>' + s.motion + '</td>' +
+      '<td>' + s.cue + '</td>';
+    legendBody.appendChild(tr);
+  });
+
+  // --- level simulation: drives --level on states marked levelReact ---
+  // Mirrors audio-reactivity.md with a coarse approximation: gate, gain,
+  // perceptual gamma, attack/decay. Real smoothing lives in QML/Python.
+  var level = 0;
+  var target = 0;
+  var last = performance.now();
+
+  function levelTarget(now) {
+    // A deterministic pseudo-signal so the mockup looks alive without input.
+    var t = now / 1000;
+    var a = Math.sin(t * 2.1) * 0.5 + 0.5;
+    var b = Math.sin(t * 5.7 + 1.3) * 0.5 + 0.5;
+    return Math.max(0, a * 0.7 + b * 0.3 - 0.04); // noise gate
+  }
+
+  function tick(now) {
+    var dt = Math.min((now - last) / 1000, 0.1);
+    last = now;
+
+    var active = STATES[index].id === "listening" || STATES[index].id === "speaking";
+    target = active ? levelTarget(now) : 0;
+
+    // gain + gamma + tanh, then one-pole attack/decay
+    var g = Math.min(target * 2.2, 1);
+    var c = Math.tanh(g * 2) / Math.tanh(2);
+    var p = Math.pow(c, 0.75);
+    var tau = p > level ? 0.045 : 0.24;
+    var alpha = 1 - Math.exp(-dt / tau);
+    level += alpha * (p - level);
+
+    document.documentElement.style.setProperty("--level", level.toFixed(3));
+    // --level is read by .orb via the inherited custom property
+    orbs.forEach(function (o) { o.style.setProperty("--level", level.toFixed(3)); });
+
+    requestAnimationFrame(tick);
+  }
+
+  // --- viewer controls ---
+  document.getElementById("next").addEventListener("click", function () { setIndex(index + 1); });
+  document.getElementById("prev").addEventListener("click", function () { setIndex(index - 1); });
+
+  var autoBtn = document.getElementById("auto");
+  autoBtn.addEventListener("click", function () {
+    if (autoTimer) {
+      clearInterval(autoTimer); autoTimer = null;
+      autoBtn.setAttribute("aria-pressed", "false");
+      autoBtn.textContent = "auto-cycle";
+    } else {
+      autoTimer = setInterval(function () { setIndex(index + 1); }, 2600);
+      autoBtn.setAttribute("aria-pressed", "true");
+      autoBtn.textContent = "stop auto-cycle";
+    }
+  });
+
+  function bindToggle(id, cls) {
+    var el = document.getElementById(id);
+    el.addEventListener("click", function () {
+      var on = el.getAttribute("aria-pressed") !== "true";
+      el.setAttribute("aria-pressed", on ? "true" : "false");
+      document.body.classList.toggle(cls, on);
+    });
+  }
+  bindToggle("grayscale", "grayscale");
+  bindToggle("reduced", "reduced-motion");
+  bindToggle("opaque", "opaque-fallback");
+
+  // Keyboard: left/right arrows cycle states when the body has focus.
+  document.addEventListener("keydown", function (e) {
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    if (e.key === "ArrowRight") { setIndex(index + 1); }
+    if (e.key === "ArrowLeft") { setIndex(index - 1); }
+  });
+
+  setIndex(0);
+  applyState(0);
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

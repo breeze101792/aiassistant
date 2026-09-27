@@ -5,7 +5,7 @@ import pytest
 @pytest.fixture
 def message_bus():
     """Fresh MessageBus for each test."""
-    from bus.bus import MessageBus
+    from aiassistant.bus.bus import MessageBus
     return MessageBus()
 
 

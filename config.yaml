@@ -1,11 +1,20 @@
 # AI Assistant Configuration
-# All modules are always loaded. Backend controls behavior.
+#
+# All modules are loaded; the backend keys control their behavior.
+# See docs/contracts/schemas.md for the full key reference.
 
 bus:
+  # Loopback by default. Widening this REQUIRES a non-empty remote_auth_token,
+  # or the assistant refuses to start: an unauthenticated reachable bus plus a
+  # pi harness is a remote shell. See docs/security/threat-model.md RISK-0001.
+  bind: "127.0.0.1"
   websocket_port: 8765
   remote_auth_token: ""
 
-brain:
+agent:
+  # The loop owner: native (our loop) or pi (external agent). See
+  # docs/architecture/decisions/ADR-0004-harness-vs-provider.md
+  harness: native
   persona: |
     You are a smart, detail-oriented assistant. Always think step by step.
     Match the user's language. Be concise. Use tools when available.
@@ -16,6 +25,19 @@ brain:
     api_key: ""
     max_tokens: 4096
     temperature: 0.7
+  pi:
+    # pi is a coding agent, not a model provider. It is disabled by default
+    # because it runs with your permissions and has no permission system of its
+    # own. Read docs/security/threat-model.md before enabling it.
+    enabled: false
+    command: "pi"
+    workspace: "./pi_workspace"
+    tools: [read, write, edit, grep, find, ls]
+    policy_extension: "./pi_extensions/workspace_guard.ts"
+    allow_channels: [console, voice, orb]
+    turn_timeout_s: 300
+    restart_backoff_s: [1, 2, 4, 8, 30]
+    memory_prime_on_start: true
   memory:
     conversations_path: ".config/aiassistant/memory/conversations"
     facts_path: ".config/aiassistant/memory/facts"
@@ -31,47 +53,65 @@ brain:
   thinking:
     max_reflect_loops: 3
 
+conversation:
+  # What happens when input arrives during a turn: "interrupt" supersedes the
+  # in-flight turn, "queue" would wait for it.
+  busy: interrupt
+  turn_timeout_s: 300
+  retry_max: 3
+
 scheduler:
   storage_path: ".config/aiassistant/schedules.json"
   max_pending: 100
 
-ears:
+voice:
+  listen:
+    # ptt (push-to-talk) | open (always listening) | wake (wake phrase gates)
+    mode: open
   backend: stub
   recognizer: whisper          # whisper | funasr (only used with backend: halasr)
-  hotwords: ["hello", "hey jarvis"]
-  silence_timeout: 20
+  hotwords: ["hey jarvis"]
+  endpoint_silence_ms: 2000
+  speak_text_turns: false
+  barge_in:
+    # Voice barge-in needs echo cancellation. Without it the assistant hears
+    # itself and self-triggers. See docs/architecture/decisions/ADR-0011.
+    enabled: false
 
-mouth:
+voice_tts:
   backend: text
   voice: "en-US-AriaNeural"
   speed: 1.0
 
-eyes:
+vision:
   backend: stub
   camera_index: 0
   vision_model: null
   vision_model_url: ""
 
-hands:
-  tool_paths:
-    - "./modules/hands/builtin_tools"
-    - "./modules/hands/skills"
+tools:
+  # Discovered by importing each package and scanning it, so it works from
+  # source, an installed package, or a frozen build.
+  packages:
+    - "aiassistant.tools.builtin_tools"
+    - "aiassistant.tools.skills"
   sandbox_default: false
   command_timeout: 30
   safe_paths: ["./workspace", "/tmp/aiassistant"]
 
-canvas:
-  backend: file
-  web_port: 8081
-  image_model: null
-  image_model_url: ""
-  default_size: "1024x1024"
-
-cli:
+console:
   backend: simple
   prompt: "> "
 
-chat:
+messaging:
   backends: []
   telegram_token: ""
   telegram_allowed_users: []
+
+display:
+  # orb | console. console suppresses the window entirely (REQ-CONSOLE-004).
+  mode: orb
+  always_on_top: true
+  # Wayland cannot reliably keep a client on top or accept client positioning;
+  # the orb degrades to a normal window there.
+  reduced_motion: false

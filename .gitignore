@@ -181,3 +181,6 @@ config.local.yaml
 
 data
 user_memory.txt
+
+# pi runtime (the child's working directory)
+pi_workspace/

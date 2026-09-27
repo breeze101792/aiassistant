@@ -1,816 +1,340 @@
-# AI Assistant — Implementation & Verification Plan
-
-Based on [ARCH.md](ARCH.md). Written for Claude to implement and verify.
-
----
-
-## Phase 1: Scaffolding + Message Bus
-
-### What to create
-- `requirements.txt` — update with bus (aiohttp, websockets), llm (ollama, openai), stubs
-- `.gitignore` — add data/, __pycache__, *.pyc, .env, config.local.yaml
-- `config.yaml` — full config from ARCH.md with stub/text defaults (chat mode)
-- `bus/__init__.py` — empty
-- `bus/errors.py` — `BusError`, `NoSubscriberError`, `TimeoutError`
-- `bus/bus.py` — `MessageBus` class: `publish()`, `subscribe()`, `unsubscribe()`, `request()` (RPC with asyncio.wait_for), `register()`, `unregister()`, `list_modules()`, `user_input()`
-- `bus/registry.py` — `ModuleRegistry`: dict of module_name → {status, remote, capabilities, subscription_ids}
-- `modules/__init__.py` — empty
-- `modules/base.py` — `BaseModule` abstract class (module_name, setup, start, stop, health, register)
-
-### How Claude verifies
-```bash
-python -c "
-import asyncio
-from bus.bus import MessageBus
-from bus.errors import NoSubscriberError
-
-async def test():
-    bus = MessageBus()
-    results = []
-
-    # Test subscribe + publish
-    async def handler(topic, payload):
-        results.append((topic, payload))
-
-    bus.subscribe('test.hello', handler)
-    bus.publish('test.hello', {'msg': 'world'})
-    await asyncio.sleep(0.01)
-    assert results == [('test.hello', {'msg': 'world'})], f'Expected match, got {results}'
-
-    # Test no subscriber
-    bus.publish('test.nosub', {})
-    await asyncio.sleep(0.01)
-
-    # Test register + list_modules
-    class FakeMod:
-        module_name = 'test_mod'
-    bus.register(FakeMod())
-    modules = bus.list_modules()
-    assert 'test_mod' in modules, f'Expected test_mod in {modules}'
-
-    # Test unsubscribe
-    results.clear()
-    sub_id = bus.subscribe('test.hello', handler)
-    bus.unsubscribe(sub_id)
-    bus.publish('test.hello', {'msg': 'again'})
-    await asyncio.sleep(0.01)
-    assert results == [], f'Expected empty after unsubscribe, got {results}'
-
-    print('All bus tests passed')
-
-asyncio.run(test())
-"
-# Expected: All bus tests passed
-```
-
-### Tests
-- `tests/test_bus.py` — pub/sub delivery, multiple subscribers same topic, unsubscribe stops delivery, RPC timeout raises, register/unregister cycle, user_input publishes to correct topic
-
----
-
-## Phase 2: LLM Backends
-
-### What to create
-- `llm/__init__.py` — empty
-- `llm/base.py` — `LLMBackend` abstract class: `chat(messages, tools, temperature, max_tokens) -> dict`, `embed(text) -> list[float]`, `embed_batch(texts) -> list[list[float]]`
-- `llm/ollama.py` — `OllamaBackend(LLMBackend)`: wraps `ollama` Python library, `/api/chat` and `/api/embeddings`
-- `llm/openai.py` — `OpenAIBackend(LLMBackend)`: wraps `openai` Python library, chat.completions and embeddings
-
-### How Claude verifies
-```bash
-python -c "
-from llm.base import LLMBackend
-from llm.ollama import OllamaBackend
-
-# Check interface compliance
-assert hasattr(LLMBackend, 'chat'), 'Missing chat method'
-assert hasattr(LLMBackend, 'embed'), 'Missing embed method'
-assert hasattr(LLMBackend, 'embed_batch'), 'Missing embed_batch method'
-
-# Check concrete class
-be = OllamaBackend(model='qwen3:1.7b', url='http://127.0.0.1:11434')
-assert be.model == 'qwen3:1.7b'
-
-print('LLM backend interface checks passed')
-"
-# Expected: LLM backend interface checks passed
-```
-
-### Tests
-- `tests/test_llm.py` — `OllamaBackend` smoke test if Ollama is running (skip if not), `OpenAIBackend` smoke test if API key set (skip if not), mock-based tests for request/response format, embed() returns correct dimension list
-
----
-
-## Phase 3: Brain — Core Loop + Input Processing
-
-### What to create
-- `modules/brain/__init__.py` — empty
-- `modules/brain/brain.py` — `BrainModule(BaseModule)`: 7-stage thinking loop orchestration (PERCEIVE → UNDERSTAND → REASON → PLAN → ACT → REFLECT → RESPOND), subscribes to all input topics from ARCH.md, publishes response/action topics, `max_reflect_loops` guard
-- `modules/brain/perceive.py` — `Perceiver`: classifies input type (text/speech/vision/tool_result/schedule), hotword check, noise filter, fast-tracks tool results to REFLECT
-- `modules/brain/understand.py` — `Understander`: intent classification, disambiguation flag, urgency check
-
-### How Claude verifies
-```bash
-python -c "
-import asyncio
-from bus.bus import MessageBus
-from modules.brain.brain import BrainModule
-from modules.brain.perceive import Perceiver
-from modules.brain.understand import Understander
-
-# Brain module structure
-bus = MessageBus()
-brain = BrainModule(bus, {
-    'persona': 'You are a helpful assistant.',
-    'llm': {'provider': 'ollama', 'model': 'qwen3:1.7b', 'url': 'http://127.0.0.1:11434'},
-    'memory': {'conversations_path': './data/memory/conversations', 'facts_path': './data/memory/facts', 'knowledge_path': './data/memory/knowledge', 'embeddings_db': './data/embeddings.db', 'context_max_tokens': 4096, 'context_recent_messages': 20},
-    'embeddings': {'provider': 'same', 'model': ''},
-    'thinking': {'max_reflect_loops': 3}
-})
-assert brain.module_name == 'brain'
-assert brain.max_reflect_loops == 3
-
-# Perceiver
-p = Perceiver()
-result = p.classify({'topic': 'user.input.text', 'payload': {'text': 'hello'}})
-assert result.input_type == 'text'
-assert not result.is_noise
-
-result2 = p.classify({'topic': 'status.hand.done', 'payload': {'request_id': 'r1', 'result': 'ok'}})
-assert result2.is_tool_result
-
-# Understander
-u = Understander()
-intent = u.classify('What is the weather tomorrow?')
-assert intent.type in ('question', 'command', 'chat')
-
-print('Brain core tests passed')
-"
-# Expected: Brain core tests passed
-```
-
-### Tests
-- `tests/test_brain_core.py` — BrainModule subscribes to all required topics, publishes response.text on input, max_reflect_loops terminates infinite tool loops, Perceiver correctly classifies all input types, Understander handles ambiguous input
-
----
-
-## Phase 4: Brain — Reasoning + Response
-
-### What to create
-- `modules/brain/reason.py` — `Reasoner`: builds LLM prompt with persona + memory context + tool schemas, calls LLM, returns chain-of-thought + decision
-- `modules/brain/plan.py` — `Planner`: decides simple answer vs tool needed vs multi-step, identifies which tool(s) to call, orders execution
-- `modules/brain/reflect.py` — `Reflector`: evaluates tool results — sufficient? need more? failed? retry? fallback? Returns `ReflectDecision` (proceed/loop/abort)
-- `modules/brain/respond.py` — `Responder`: synthesizes final response, publishes `response.text` + `action.speak`, appends turn to conversation markdown file, generates embedding for turn
-
-### How Claude verifies
-```bash
-python -c "
-from modules.brain.reason import Reasoner
-from modules.brain.plan import Planner
-from modules.brain.reflect import Reflector, ReflectDecision
-from modules.brain.respond import Responder
-
-# Planner
-planner = Planner()
-decision = planner.decide(intent='question', complexity='simple', has_tools=False)
-assert decision.action == 'direct_answer'
-
-decision2 = planner.decide(intent='question', complexity='needs_data', has_tools=True)
-assert decision2.action in ('call_tool', 'multi_step')
-
-# Reflector
-reflector = Reflector()
-d = reflector.evaluate(tool_result='sunny, 26°C', goal='get weather')
-assert d.verdict == 'proceed'
-
-d2 = reflector.evaluate(tool_result=None, error='timeout', goal='get weather')
-assert d2.verdict in ('retry', 'fallback', 'abort')
-
-print('Brain reasoning tests passed')
-"
-# Expected: Brain reasoning tests passed
-```
-
-### Tests
-- `tests/test_brain_reasoning.py` — Reasoner includes persona in prompt, Planner routes simple questions to direct_answer, Reflector loops on insufficient data (max 3), Responder publishes response.text with conversation_id, Responder appends to today's conversation file
-
----
-
-## Phase 5: Brain — Memory + Embeddings + Persona + Tool Cache
-
-### What to create
-- `modules/brain/memory.py` — `MemoryManager`: reads/writes conversation markdown files (`data/memory/conversations/YYYY-MM-DD.md`), reads/writes fact markdown files, loads knowledge base markdown files, assembles working memory context (recency + semantic search via embeddings.db)
-- `modules/brain/embeddings.py` — `EmbeddingsEngine`: calls LLM embed()/embed_batch(), SQLite cache for conversation_embeddings + fact_embeddings + knowledge_embeddings, cosine similarity search, rebuild_index() from markdown files
-- `modules/brain/persona.py` — `Persona`: loads system prompt from config, injects language preference + behavior rules
-- `modules/brain/tools.py` — `ToolCache`: receives tool list from `status.hands.ready`, converts to OpenAI function-calling format schemas, provides `get_schemas()` and `lookup(name)`
-
-### How Claude verifies
-```bash
-python -c "
-import os, tempfile, json
-from modules.brain.memory import MemoryManager
-from modules.brain.embeddings import EmbeddingsEngine
-from modules.brain.persona import Persona
-from modules.brain.tools import ToolCache
-
-# MemoryManager
-tmpdir = tempfile.mkdtemp()
-mm = MemoryManager(conversations_path=os.path.join(tmpdir, 'conversations'),
-                   facts_path=os.path.join(tmpdir, 'facts'),
-                   knowledge_path=os.path.join(tmpdir, 'knowledge'))
-# Save a conversation turn
-mm.save_turn('2026-05-22', '14:30:05', 'user', 'Hello')
-mm.save_turn('2026-05-22', '14:30:08', 'assistant', 'Hi there!', thinking='greeting')
-# Read back
-turns = mm.get_turns('2026-05-22')
-assert len(turns) == 2
-assert turns[0]['speaker'] == 'user'
-assert turns[0]['content'] == 'Hello'
-
-# Fact management
-mm.save_fact('user_preferences', 'User prefers Celsius')
-facts = mm.get_facts('user_preferences')
-assert 'Celsius' in facts[0]
-
-# Persona
-p = Persona('You are a helpful assistant. Be concise.')
-prompt = p.get_system_prompt()
-assert 'helpful assistant' in prompt
-assert 'concise' in prompt
-
-# ToolCache
-tc = ToolCache()
-tc.load([{'name': 'web_search', 'description': 'Search the web', 'parameters': {'type': 'object', 'properties': {'query': {'type': 'string'}}, 'required': ['query']}}])
-schemas = tc.get_openai_schemas()
-assert len(schemas) == 1
-assert schemas[0]['function']['name'] == 'web_search'
-
-print('Memory + embeddings + persona + tools tests passed')
-"
-# Expected: Memory + embeddings + persona + tools tests passed
-```
-
-### Tests
-- `tests/test_memory.py` — conversation markdown round-trip, fact CRUD operations, knowledge base chunk loading, working memory context assembly within token budget, recency + semantic merge
-- `tests/test_embeddings.py` — SQLite schema creation, embed + cache cycle, cosine similarity search returns expected ranking, rebuild_index from markdown files
-
----
-
-## Phase 6: Hands — Tool Executor + Built-in Tools
-
-### What to create
-- `modules/hands/__init__.py` — empty
-- `modules/hands/hands.py` — `HandsModule(BaseModule)`: subscribes to `action.execute`, looks up tool by name, calls `execute(**params)`, publishes `status.hand.done` or `status.hand.error`, scans tool_paths at startup, publishes `status.hands.ready` with tool list, handles `sandbox` flag
-- `modules/hands/sandbox.py` — `Sandbox`: restricted subprocess (no network, limited paths, timeout), wraps tool execution
-- `modules/hands/builtin_tools/__init__.py` — empty
-- `modules/hands/builtin_tools/base.py` — `ToolBase` abstract class: `name`, `description`, `parameters` (JSON Schema dict), `execute(**kwargs) -> Any`
-- `modules/hands/builtin_tools/shell.py` — `ShellTool`: execute shell command, returns stdout/stderr/returncode
-- `modules/hands/builtin_tools/datetime_tool.py` — `DateTimeTool`: returns current date/time/timezone
-- `modules/hands/builtin_tools/file_ops.py` — `FileReadTool` + `FileWriteTool`: read/write files within safe_paths
-
-### How Claude verifies
-```bash
-python -c "
-import asyncio, tempfile, os
-from bus.bus import MessageBus
-from modules.hands.builtin_tools.base import ToolBase
-from modules.hands.builtin_tools.datetime_tool import DateTimeTool
-from modules.hands.builtin_tools.file_ops import FileReadTool, FileWriteTool
-from modules.hands.sandbox import Sandbox
-
-# ToolBase interface check
-dt = DateTimeTool()
-assert dt.name == 'datetime'
-assert 'description' in dir(dt)
-assert 'parameters' in dir(dt)
-result = dt.execute()
-assert 'datetime' in result or 'timezone' in result or 'iso' in result
-
-# File ops
-tmp = tempfile.mkdtemp()
-path = os.path.join(tmp, 'test.txt')
-fw = FileWriteTool()
-fw.execute(path=path, content='hello world')
-fr = FileReadTool()
-content = fr.execute(path=path)
-assert content == 'hello world'
-
-# Tool schema is valid JSON Schema
-schema = dt.parameters
-assert schema['type'] == 'object'
-
-# Sandbox
-sb = Sandbox(safe_paths=[tmp], timeout=5)
-result = sb.run('echo hello')
-assert result['returncode'] == 0
-assert 'hello' in result['stdout']
-
-print('Hands + tools tests passed')
-"
-# Expected: Hands + tools tests passed
-```
-
-### Tests
-- `tests/test_hands.py` — HandsModule loads tools from directory, publishes status.hands.ready with correct schemas, executes tool and returns result with request_id, sandbox blocks unsafe paths, sandbox enforces timeout
-
----
-
-## Phase 7: Hands — Web Tools + Remaining Built-ins
-
-### What to create
-- `modules/hands/builtin_tools/websearch.py` — `WebSearchTool`: uses ddgs (duckduckgo-search) to search web, returns list of {title, url, snippet}
-- `modules/hands/builtin_tools/webfetch.py` — `WebFetchTool`: fetches URL, extracts text content (html2text or bs4)
-- `modules/hands/builtin_tools/weather.py` — `WeatherTool`: gets weather for location via free API (wttr.in)
-- `modules/hands/builtin_tools/browser.py` — `BrowserTool`: stub only in this phase (requires playwright, defer full impl)
-
-### How Claude verifies
-```bash
-python -c "
-from modules.hands.builtin_tools.websearch import WebSearchTool
-from modules.hands.builtin_tools.webfetch import WebFetchTool
-from modules.hands.builtin_tools.weather import WeatherTool
-
-# WebSearch
-ws = WebSearchTool()
-results = ws.execute(query='Python programming', max_results=3)
-assert isinstance(results, list)
-if len(results) > 0:
-    assert 'title' in results[0]
-    assert 'url' in results[0]
-
-# WebFetch
-wf = WebFetchTool()
-content = wf.execute(url='https://httpbin.org/get')
-assert content is not None
-
-# Weather
-wt = WeatherTool()
-result = wt.execute(location='London')
-assert result is not None
-
-print('Web tools tests passed')
-"
-# Expected: Web tools tests passed (may skip if offline — mark as SKIP)
-```
-
-### Tests
-- `tests/test_web_tools.py` — search returns list with expected keys, fetch returns text content, weather returns string with location, mock-based tests for offline reliability
-
----
-
-## Phase 8: Scheduler
-
-### What to create
-- `modules/scheduler/__init__.py` — empty
-- `modules/scheduler/scheduler.py` — `SchedulerModule(BaseModule)`: clock watcher loop (1s tick), subscribes to `action.schedule.add/list/delete`, publishes `schedule.triggered` when time arrives, handles recurring tasks (daily/weekly/hourly), enforces max_pending limit
-- `modules/scheduler/storage.py` — `ScheduleStorage`: load/save `data/schedules.json`, atomic writes (write to temp + rename)
-
-### How Claude verifies
-```bash
-python -c "
-import asyncio, tempfile, os, json
-from modules.scheduler.storage import ScheduleStorage
-from datetime import datetime, timezone, timedelta
-
-tmpdir = tempfile.mkdtemp()
-path = os.path.join(tmpdir, 'schedules.json')
-st = ScheduleStorage(path)
-
-# Add a task
-task = {
-    'id': 'sched_1',
-    'task': 'Test reminder',
-    'time': (datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat(),
-    'repeat': None,
-    'description': 'Test'
-}
-st.add(task)
-tasks = st.list_all()
-assert len(tasks) == 1
-assert tasks[0]['id'] == 'sched_1'
-
-# Delete
-st.delete('sched_1')
-assert len(st.list_all()) == 0
-
-# Persistence
-st.add(task)
-st2 = ScheduleStorage(path)
-assert len(st2.list_all()) == 1
-
-print('Scheduler tests passed')
-"
-# Expected: Scheduler tests passed
-```
-
-### Tests
-- `tests/test_scheduler.py` — storage CRUD, recurring tasks re-schedule correctly, max_pending enforcement, atomic writes don't corrupt on crash, scheduler triggers on time (fast-forward mock clock)
-
----
-
-## Phase 9: CLI Module + End-to-End Chat Mode
-
-### What to create
-- `modules/cli/__init__.py` — empty
-- `modules/cli/cli.py` — `CLIModule(BaseModule)`: reads stdin line by line, publishes `user.input.text`, subscribes to `response.text` and prints to stdout, special commands `/exit`, `/verbose`, `/clear`, `/agent <name>`, multi-line input (line ending with `\`)
-- `main.py` — entry point: loads config.yaml, creates MessageBus, instantiates all modules (brain, hands, scheduler, cli), calls setup() → start() for each, handles graceful shutdown on SIGINT/SIGTERM, fatal exit on brain/bus crash, disable non-core modules on crash
-
-### How Claude verifies
-```bash
-# Start the assistant in background
-python main.py &
-PID=$!
-sleep 3
-
-# Send a test message via a quick script
-python -c "
-import asyncio, sys
-sys.path.insert(0, '.')
-from bus.bus import MessageBus
-async def test():
-    bus = MessageBus()
-    result = None
-    async def on_response(topic, payload):
-        nonlocal result
-        result = payload
-    bus.subscribe('response.text', on_response)
-    bus.user_input('Hello, what is your name?')
-    await asyncio.sleep(5)
-    if result:
-        print(f'GOT RESPONSE: {result[\"text\"][:80]}')
-    else:
-        print('NO RESPONSE (timeout or LLM not available)')
-asyncio.run(test())
-"
-
-# Cleanup
-kill $PID 2>/dev/null
-
-# Expected: either GOT RESPONSE with text, or NO RESPONSE if no LLM available
-echo "CLI module integration check complete"
-```
-
-### Tests
-- `tests/test_cli.py` — CLI module publishes user.input.text on stdin input, CLI prints response.text to stdout, `/exit` command triggers shutdown, multi-line input aggregation
-
----
-
-## Phase 10: Ears Module (Stub)
-
-### What to create
-- `modules/ears/__init__.py` — empty
-- `modules/ears/ears.py` — `EarsModule(BaseModule)`: subscribes to `command.ears.start/stop/pause/resume`, publishes `sensory.speech.heard` and `sensory.speech.hotword`, manages listening state machine (idle → listening → paused)
-- `modules/ears/asr_backends/__init__.py` — empty
-- `modules/ears/asr_backends/base.py` — `ASRBackend` abstract class: `transcribe(audio_bytes) -> {text, confidence, language}`
-- `modules/ears/asr_backends/stub.py` — `StubASR`: returns "no microphone available"
-
-### How Claude verifies
-```bash
-python -c "
-import asyncio
-from bus.bus import MessageBus
-from modules.ears.ears import EarsModule
-from modules.ears.asr_backends.stub import StubASR
-
-bus = MessageBus()
-ears = EarsModule(bus, {'backend': 'stub', 'device_index': 0, 'sample_rate': 48000, 'hotwords': ['hey'], 'silence_timeout': 20})
-assert ears.module_name == 'ears'
-
-# Stub backend returns expected message
-stub = StubASR()
-result = stub.transcribe(b'fake_audio')
-assert 'no microphone' in result['text'].lower() or 'not available' in result['text'].lower()
-
-print('Ears stub tests passed')
-"
-# Expected: Ears stub tests passed
-```
-
-### Tests
-- `tests/test_ears.py` — EarsModule state machine transitions, start/stop/pause/resume commands, stub backend contract, hotword detection publishes sensory.speech.hotword
-
----
-
-## Phase 11: Mouth Module (Text Backend)
-
-### What to create
-- `modules/mouth/__init__.py` — empty
-- `modules/mouth/mouth.py` — `MouthModule(BaseModule)`: subscribes to `action.speak`, manages speech queue, handles `interrupt` flag (flush queue + stop current), publishes `status.mouth.started/done/ready/error`
-- `modules/mouth/tts_backends/__init__.py` — empty
-- `modules/mouth/tts_backends/base.py` — `TTSBackend` abstract class: `speak(text, voice, speed) -> None`, `stop() -> None`
-- `modules/mouth/tts_backends/text.py` — `TextTTS`: prints text to stdout with prefix (no audio)
-
-### How Claude verifies
-```bash
-python -c "
-import asyncio
-from bus.bus import MessageBus
-from modules.mouth.mouth import MouthModule
-from modules.mouth.tts_backends.text import TextTTS
-
-bus = MessageBus()
-mouth = MouthModule(bus, {'backend': 'text', 'voice': 'default', 'speed': 1.0})
-assert mouth.module_name == 'mouth'
-
-# Text backend
-tts = TextTTS()
-tts.speak('Hello world', voice=None, speed=1.0)
-# Expected: prints [Assistant] Hello world
-
-# Queue behavior
-events = []
-async def on_started(topic, payload):
-    events.append(('started', payload))
-
-bus.subscribe('status.mouth.started', on_started)
-bus.publish('action.speak', {'text': 'Test', 'voice': None, 'speed': 1.0, 'interrupt': False})
-# async processing...
-
-print('Mouth text backend tests passed')
-"
-# Expected: Mouth text backend tests passed
-# Expected stdout: [Assistant] Hello world (from tts.speak)
-```
-
-### Tests
-- `tests/test_mouth.py` — MouthModule queues multiple speak requests, interrupt flag flushes queue, publishes started/done events, text backend outputs expected format
-
----
-
-## Phase 12: Eyes Module (Stub) + Canvas Module (File Backend)
-
-### What to create
-- `modules/eyes/__init__.py` — empty
-- `modules/eyes/eyes.py` — `EyesModule(BaseModule)`: subscribes to `command.eyes.capture/stream.start/stream.stop`, publishes `sensory.vision.frame`, RPC endpoint `eyes.analyze`
-- `modules/eyes/vision_backends/__init__.py` — empty
-- `modules/eyes/vision_backends/base.py` — `VisionBackend` abstract class
-- `modules/eyes/vision_backends/stub.py` — `StubVision`: returns "no camera available"
-- `modules/canvas/__init__.py` — empty
-- `modules/canvas/canvas.py` — `CanvasModule(BaseModule)`: subscribes to `action.canvas.show/generate/clear/draw/update`, publishes `sensory.canvas.click/input/draw` and `status.canvas.*`, RPC `canvas.screenshot`
-- `modules/canvas/renderer.py` — `ImageRenderer`: stub image generation (returns placeholder/error until a real model is configured)
-- `modules/canvas/backends/__init__.py` — empty
-- `modules/canvas/backends/base.py` — `CanvasBackend` abstract class
-- `modules/canvas/backends/file.py` — `FileCanvas`: writes output to files in `data/canvas_output/`
-
-### How Claude verifies
-```bash
-python -c "
-from bus.bus import MessageBus
-from modules.eyes.eyes import EyesModule
-from modules.eyes.vision_backends.stub import StubVision
-from modules.canvas.canvas import CanvasModule
-from modules.canvas.backends.file import FileCanvas
-import tempfile, os
-
-bus = MessageBus()
-
-# Eyes stub
-eyes = EyesModule(bus, {'backend': 'stub', 'camera_index': 0, 'vision_model': None})
-assert eyes.module_name == 'eyes'
-
-stub = StubVision()
-result = stub.capture()
-assert 'not available' in result.get('description', '').lower() or 'no camera' in result.get('description', '').lower()
-
-# Canvas file backend
-tmpdir = tempfile.mkdtemp()
-fc = FileCanvas(output_dir=tmpdir)
-fc.show(content_type='text', data='Hello canvas', title='Test')
-files = os.listdir(tmpdir)
-assert len(files) > 0, f'Expected output file in {tmpdir}'
-
-print('Eyes stub + Canvas file backend tests passed')
-"
-# Expected: Eyes stub + Canvas file backend tests passed
-```
-
-### Tests
-- `tests/test_eyes.py` — stub backend contract, capture command publishes frame, stream start/stop lifecycle
-- `tests/test_canvas.py` — file backend writes content to disk, generate stub returns placeholder, clear removes content, draw creates expected output
-
----
-
-## Phase 13: Chat Module + Remote WebSocket
-
-### What to create
-- `modules/chat/__init__.py` — empty
-- `modules/chat/chat.py` — `ChatModule(BaseModule)`: manages multiple chat backends, each backend publishes `user.input.text`, subscribes to `response.text` and sends back
-- `modules/chat/backends/__init__.py` — empty
-- `modules/chat/backends/base.py` — `ChatBackend` abstract class: `start()`, `stop()`, `send_message(text)`, callback `on_message(handler)`
-- `modules/chat/backends/telegram.py` — `TelegramBackend`: stub in this phase (requires telegram bot token), structure for future
-- `bus/remote.py` — `RemoteBus`: WebSocket server (aiohttp or websockets), accepts remote module connections, authenticates via token, relays pub/sub messages bidirectionally, tracks remote modules in registry
-- `main_remote.py` — Entry point for remote modules: connects to remote bus WebSocket, creates module instance, bridges local bus calls to remote
-
-### How Claude verifies
-```bash
-python -c "
-from bus.remote import RemoteBus
-from modules.chat.backends.base import ChatBackend
-
-# Chat backend interface
-assert hasattr(ChatBackend, 'start')
-assert hasattr(ChatBackend, 'stop')
-assert hasattr(ChatBackend, 'send_message')
-
-# RemoteBus has expected structure
-import inspect
-from bus.remote import RemoteBus
-assert hasattr(RemoteBus, 'start')
-assert hasattr(RemoteBus, 'stop')
-
-print('Chat + remote interface tests passed')
-"
-# Expected: Chat + remote interface tests passed
-```
-
-### Tests
-- `tests/test_chat.py` — ChatBackend abstract interface, multiple backends don't interfere, ChatModule routes response.text to all active backends
-- `tests/test_remote.py` — WebSocket server starts/stops cleanly, module connect/disconnect updates registry, message relay works bidirectionally
-
----
-
-## Phase 14: Skills System
-
-### What to create
-- `modules/hands/skills/__init__.py` — empty
-- `modules/hands/skills/base.py` — `SkillBase(ToolBase)`: adds `call_tool(name, **params)` (publishes action.execute, waits for status.hand.done, returns result) and `call_llm(prompt, context)` (calls brain.ask RPC)
-- `modules/hands/skills/research.py` — `ResearchSkill`: chains web_search → web_fetch → summarize → file.write, demonstrates the pattern
-- `modules/hands/skills/daily_briefing.py` — `DailyBriefingSkill`: chains datetime + weather + calendar.list → formatted summary
-
-### How Claude verifies
-```bash
-python -c "
-from modules.hands.builtin_tools.base import ToolBase
-from modules.hands.skills.base import SkillBase
-
-# SkillBase extends ToolBase
-assert issubclass(SkillBase, ToolBase)
-
-# Check SkillBase adds call_tool and call_llm
-assert hasattr(SkillBase, 'call_tool')
-assert hasattr(SkillBase, 'call_llm')
-
-# Skill has same interface as tool
-skill = SkillBase()
-skill.name = 'test_skill'
-skill.description = 'A test skill'
-skill.parameters = {'type': 'object', 'properties': {}}
-assert hasattr(skill, 'execute')
-
-print('Skills interface tests passed')
-"
-# Expected: Skills interface tests passed
-```
-
-### Tests
-- `tests/test_skills.py` — SkillBase has same interface as ToolBase (LLM sees them identically), ResearchSkill execute() calls dependencies in order, call_tool timeout handling, call_llm fallback on brain unavailable
-
----
-
-## Phase 15: Integration — Full System
-
-### What to create
-- `main.py` — update with proper startup ordering (bus → brain → hands → scheduler → cli → ears → mouth → eyes → canvas → chat), crash isolation (non-core module crash → disable + log, brain/bus crash → exit), signal handling
-- `config.yaml` — finalize with all defaults
-- `tests/fixtures/` — test config, test memory files, mock LLM responses
-- `tests/test_integration.py` — end-to-end: user_input → brain → response.text flow, tool call lifecycle (action.execute → status.hand.done → reflect → respond), scheduled task fires and brain responds, module crash doesn't kill system
-
-### How Claude verifies
-```bash
-# Full integration test
-python -c "
-import asyncio, sys, json
-sys.path.insert(0, '.')
-from bus.bus import MessageBus
-from bus.registry import ModuleRegistry
-
-# Verify all modules can be instantiated
-from modules.brain.brain import BrainModule
-from modules.hands.hands import HandsModule
-from modules.scheduler.scheduler import SchedulerModule
-from modules.cli.cli import CLIModule
-from modules.ears.ears import EarsModule
-from modules.mouth.mouth import MouthModule
-from modules.eyes.eyes import EyesModule
-from modules.canvas.canvas import CanvasModule
-from modules.chat.chat import ChatModule
-
-modules = {
-    'brain': BrainModule,
-    'hands': HandsModule,
-    'scheduler': SchedulerModule,
-    'cli': CLIModule,
-    'ears': EarsModule,
-    'mouth': MouthModule,
-    'eyes': EyesModule,
-    'canvas': CanvasModule,
-    'chat': ChatModule,
-}
-print(f'All {len(modules)} modules importable')
-print('Integration check passed')
-"
-# Expected: All 9 modules importable, Integration check passed
-```
-
-### Tests
-- `tests/test_integration.py` — full message flow from user input to response, tool call + result cycle, scheduler triggers brain response, module crash isolation, config-driven backend selection
-
----
-
-## Phase 16: Ear + Mouth Real Backends (FunASR + Edge TTS)
-
-### What to create
-- `modules/ears/asr_backends/funasr.py` — `FunASRBackend`: wraps existing funasr code, real microphone + ASR
-- `modules/ears/asr_backends/whisper.py` — `WhisperBackend`: wraps OpenAI Whisper (optional, depends on whisper package)
-- `modules/mouth/tts_backends/edge_tts.py` — `EdgeTTSBackend`: Microsoft Edge TTS, generates audio, plays via pyaudio or pygame
-- `modules/mouth/tts_backends/piper.py` — `PiperBackend`: local Piper TTS (optional, depends on piper-tts)
-
-### How Claude verifies
-```bash
-python -c "
-from modules.ears.asr_backends.funasr import FunASRBackend
-from modules.mouth.tts_backends.edge_tts import EdgeTTSBackend
-
-# Check interface compliance
-from modules.ears.asr_backends.base import ASRBackend
-from modules.mouth.tts_backends.base import TTSBackend
-
-assert issubclass(FunASRBackend, ASRBackend)
-assert issubclass(EdgeTTSBackend, TTSBackend)
-
-print('Real backend interface checks passed')
-"
-# Expected: Real backend interface checks passed
-```
-
-### Tests
-- Manual: switch config to `ears: {backend: funasr}` + `mouth: {backend: edge_tts}`, speak to assistant, verify voice response
-
----
-
-## Phase Summary
-
-| Phase | Files | Cumulative capability |
-|--------|-------|----------------------|
-| 1 | 8 | Bus + scaffolding |
-| 2 | 3 | LLM backends |
-| 3 | 3 | Brain loop skeleton |
-| 4 | 4 | Brain reasoning complete |
-| 5 | 4 | Memory + embeddings + persona |
-| 6 | 8 | Hands + sandbox + core builtins |
-| 7 | 4 | Web tools (search, fetch, weather) |
-| 8 | 2 | Scheduler |
-| 9 | 2 | **MVP: CLI chat mode works** |
-| 10 | 4 | Ears stub |
-| 11 | 4 | Mouth text backend |
-| 12 | 10 | Eyes stub + Canvas file backend |
-| 13 | 6 | Chat module + remote WebSocket |
-| 14 | 4 | Skills system |
-| 15 | 3 | Full integration tests |
-| 16 | 4 | Real ASR + TTS backends |
-
-**MVP at Phase 9**: CLI text chat with brain reasoning loop, tools (shell, datetime, file, web), scheduler, and full memory system. You can type to the assistant and it thinks, uses tools, remembers, and responds.
-
-**Full system at Phase 15**: All modules integrated with crash isolation, remote module support, and skills.
-
----
-
-## Dependency Graph
-
-```
-Phase 1 (Bus)
-    │
-    ▼
-Phase 2 (LLM)
-    │
-    ▼
-Phase 3 (Brain core)
-    │
-    ├──► Phase 4 (Brain reasoning)
-    │        │
-    │        ▼
-    │    Phase 5 (Memory)
-    │        │
-    │        ▼
-    │    Phase 6 (Hands + core tools)
-    │        │
-    │        ├──► Phase 7 (Web tools)
-    │        │
-    │        ▼
-    │    Phase 8 (Scheduler)
-    │        │
-    │        ▼
-    │    Phase 9 (CLI) ◄── MVP
-    │        │
-    │        ├──► Phase 10 (Ears stub)
-    │        ├──► Phase 11 (Mouth text)
-    │        ├──► Phase 12 (Eyes + Canvas)
-    │        ├──► Phase 13 (Chat + Remote)
-    │        ├──► Phase 14 (Skills)
-    │        │
-    │        ▼
-    │    Phase 15 (Integration)
-    │        │
-    │        ▼
-    │    Phase 16 (Real backends)
-```
+# PLAN — AI Assistant Refactor
+
+The execution plan. Design lives in [`docs/`](docs/README.md); this file is the
+work order and the record of what was built.
+
+> **Status (2026-09-27): all seven chunks are implemented.** The assistant runs,
+> the suite is green (341 passed, 1 skipped), and the harness swap and pi
+> confinement were verified against a live pi 0.87.1 process. Ctrl+C and
+> `/exit` both terminate cleanly, verified through a real terminal.
+
+## Goal
+
+Refactor the existing bus-modular Python assistant into a **voice-first
+assistant** with a **native orb UI** and a **config-swappable agent harness**
+(`native` or `pi`), running on **macOS and Linux**, with a console fallback.
+
+## What the implementation changed in the design
+
+Two findings from building it changed the design. Both are recorded because a
+plan that never corrects itself is not a plan.
+
+| Finding | Where | Consequence |
+| --- | --- | --- |
+| **pi's `message_end` fires once per role** — system, user, then assistant. | Live spike, chunk 4 | Mapping every `message_end` as the answer would have made the system prompt the spoken response. Only `role: assistant` is a final now. |
+| **A failed pi turn is an assistant message with `stopReason: "error"`**, not a separate error event, and `errorMessage` is a nested JSON blob. | Live spike, chunk 4 | Without this a 429 read as an empty successful turn. It now maps to `turn_error` with the blob flattened and classified. |
+| **Ctrl+C did not terminate the assistant.** The console read a line with `await loop.run_in_executor(None, input, prompt)`. `input()` blocks until a line arrives, and `asyncio.run` waits for the default executor at shutdown, so SIGINT set the shutdown flag and then hung forever. | Reported by the user after the refactor | The read loop is now cancellable: a loop reader on a tty, a short non-blocking poll otherwise, and `stop()` cancels the reader instead of waiting on it. Verified against a real pty sending `\x03`. Pinned by `tests/test_console.py::TestShutdownSafety`. |
+| **Opening the audio device inside a unit test segfaults the host audio stack.** | Chunk 5 tests | `VoiceModule.disable_audio()` exists so tests and headless runs never touch a real device. |
+| **Ollama requires tool-call arguments as a dict; OpenAI requires a JSON string.** | Chunk 3 tool round-trip | Argument encoding moved behind `provider.format_tool_arguments`; hardcoding either form fails the other provider at request time. |
+
+## Additions beyond the original plan
+
+Implemented because the design required them once the code existed:
+
+| Item | Why it was needed |
+| --- | --- |
+| `agent.transcript.snapshot` topic and its handler | The orb detects a delta gap and asks for a resync; without a server side, the gap could not be repaired. |
+| `agent.tool.event` topic | Tool activity needed its own channel; `agent.delta.kind` covers only text and thinking. |
+| `agent.policy.RetryPolicy` | The old `Reflector` computed RETRY and nothing consumed it. The retry is now real and bounded, with non-transient failures aborting immediately. |
+| `pi_extensions/workspace_guard.ts` | Verified live: an out-of-workspace `read` is blocked with our reason string and `is_error: true`, while an in-workspace read succeeds. |
+| `scripts/setup_pi.sh` | Pins pi 0.87.1 and reports that the managed install is not on PATH by default. |
+
+## Ground rules
+
+- The design doc set in `docs/` is the gate. It exists before code changes.
+- Keep the pytest suite green at each fence where possible.
+- Every claim about current behavior cites `file:line`.
+- "Unverified" is an allowed and explicit state.
+
+## Three findings that reshaped this plan
+
+Discovered by adversarial review of the first draft. Each is cheap to fix now
+and expensive later.
+
+| # | Finding | Evidence | Consequence |
+| --- | --- | --- | --- |
+| 1 | **The bridge the orb depends on is already broken.** | `bus/remote.py:45` is `_handle_connection(self, websocket, path)`; installed `websockets` is 16.0, whose handler takes one argument. Every remote connection dies with a `TypeError`. No test covers `RemoteBus`. | The "frozen bridge" was a false premise. Fixing it is chunk 1, before anything depends on it. |
+| 2 | **pi plus the current bus is a remote shell.** | `remote.py:32` binds `0.0.0.0`; `config.yaml:6` token is `""`; `remote.py:50` enforces auth only when the token is non-empty. pi runs `read`/`bash`/`edit`/`write` as the user with no permission system. | Loopback bind plus a required token are mandatory, not optional (REQ-SEC-001/002). |
+| 3 | **Interrupt cannot work as drawn.** | `brain.py:172` calls `asyncio.ensure_future(self._thinking_loop(...))` and stores no handle. | The turn task must be retained, and `command.agent.interrupt` must be subscribed and acted on. |
+
+Two smaller confirmed defects, fixed in passing:
+
+- `sandbox.py:58` uses `startswith`, so `/tmp/aiassistant-evil` passes as inside
+  `/tmp/aiassistant`.
+- `skills/base.py:68` subscribes `brain.ask.response`, which is never published
+  (the brain answers via `respond_rpc` at `brain.py:194`), and `:71` calls
+  `run_until_complete` inside a running loop.
+
+## Corrections to earlier claims
+
+Recorded so the record is honest.
+
+| Claim | Truth |
+| --- | --- |
+| "There is a web frontend to drop" | There is no frontend. `canvas/backends/web.py:7-21` is an all-`pass` stub whose `start()` claims a server that does not exist. Dropping it is a deletion. |
+| "`understand.py` / `plan.py` are dead code" | Not dead — wired at `brain.py:220` and `:250`. They are thin ceremony, which is a simplification decision (ADR-0009), not dead-code removal. |
+| "`reflect.py` is the retry policy" | `RETRY` and `FALLBACK` are computed but never acted on; only `ABORT` is branched on (`brain.py:272-286`). The retry never happens. `tests/test_brain.py:91` tests behavior that does not exist. |
+| "`respond.py` is a pipeline stage" | It duplicates `memory.save_turn`. Only one of the two was ever called. |
+
+## Module map
+
+| Old | New | Action |
+| --- | --- | --- |
+| `brain/` | `agent/` | Split and rewrite |
+| `llm/` | `reasoning/` | Rewrite with streaming |
+| `ears/` + `mouth/` | `voice/` | Merge |
+| `hands/` | `tools/` | Move, fix sandbox |
+| `eyes/` | `vision/` | Move, frozen |
+| `chat/` | `messaging/` | Move, frozen |
+| `cli/` | `console/` | Rewrite with streaming |
+| `canvas/` | — | **Delete** |
+| `modules/scheduler/` | `scheduler/` | Promote to top level |
+| `main_remote.py` | — | **Delete** |
+| — | `agent/harness/{native,pi}/` | New |
+| — | `orb/`, `bridge/`, `pi_extensions/`, `scripts/` | New |
+
+Full per-file dispositions are in the design docs; the module contracts are in
+[`docs/architecture/modules/`](docs/architecture/modules/).
+
+## Work breakdown
+
+Ordered by what unblocks what. All chunks are in scope; the order is dependency,
+not deferral.
+
+### Chunk 0 — Design docs ✅
+
+**Deliverable:** the `docs/` tree and this plan.
+
+| Output | Status |
+| --- | --- |
+| `docs/README.md` entry point | done |
+| `requirements/` — 80 requirements, scope, flows, features | done |
+| `architecture/` — overview, 11 module contracts, data model, 15 ADRs | done |
+| `contracts/` — protocols (IF-0001..0008), schemas, orb API | done |
+| `testing/` — TEST_PLAN, 60 cases, trace matrix | done |
+| `operations/` — build, deploy, repo pinning | done |
+| `security/` — threat model, 6 risks | done |
+| `research/` — pi RPC facts, UI stack comparison | done |
+| `ui/` — 12 design docs plus a mockup | done |
+
+**Verify:** doc set is well formed, every REQ appears in `trace.md`, cross-links
+resolve. Docs-only, so no tests.
+
+### Chunk 1 — Bus truth and safety
+
+**Unblocks:** the orb (chunk 6) and everything downstream.
+**Risk:** high value, low mechanical risk.
+**Gate (must all pass before chunk 2):** T-0501, T-0502, T-0503, T-0504, T-0505,
+T-0507, T-0508, T-0509, T-0510, T-0511, plus a live connect/subscribe/publish
+check and a non-loopback-bind refusal.
+
+| Task | Detail |
+| --- | --- |
+| Fix the handler | `bus/remote.py:45` → `async def _handle_connection(self, websocket)` |
+| Bind loopback | `127.0.0.1` by default, configurable (REQ-SEC-001) |
+| Require a token off-loopback | Refuse to start otherwise (REQ-SEC-002) |
+| Fix `_forward` thread safety | Schedule on the loop (`remote.py:87`) |
+| Add `unsubscribe` over WS | Currently only cleaned up on disconnect |
+| `bus/topics.py` | Constants plus payload schema tests |
+| Off-loop calls | LLM *and* embeddings (`brain.py:343`, `embeddings.py:65`) |
+| Retain the turn task | And subscribe `command.agent.interrupt` with the ordered cancel sequence |
+| Tests | A `RemoteBus` integration test — there is none today, which is why the bug shipped |
+
+**Verify:** `pytest`; a live connect/subscribe/publish check; a non-loopback
+bind without a token must refuse to start.
+
+### Chunk 2 — Rename sweep and deletions
+
+**Risk:** wide but mechanical. Run it alone; it touches everything.
+**Gate:** the full suite passes under the new layout, a grep for every old name
+returns nothing (REQ-STRUCT-001), the config-migration test passes, and the
+before/after test counts are reported (REQ-STRUCT-002).
+
+| Task | Detail |
+| --- | --- |
+| Rename modules | Per ADR-0002; include `MODULE_SPECS` (`main.py:69-78`) and `NON_CRITICAL` (`:81`) |
+| Delete | `canvas/`, `main_remote.py`, `.gitmodules`, `aiohttp` |
+| Config migration | Dual-read legacy keys with a deprecation warning (REQ-CFG-004) |
+| Codemod the string-coupled code | Test `monkeypatch` paths such as `tests/test_ears.py:46` |
+| **Do not rename frozen topic values yet** | Values consumed by frozen modules stay; the rest rename with tests (IF-0007) |
+
+**Verify:** grep for every old name (REQ-STRUCT-001); full `pytest` fence;
+before/after test counts reported (REQ-STRUCT-002).
+
+> **Watch item:** `brain.py:211` decides whether to speak by comparing
+> `payload.get("source") == "ears"`. Changing that string silently disables
+> speech. It must become a topic/constant with a test asserting voice-origin
+> input produces speech.
+
+### Chunk 3 — Reasoning contract and agent loop
+
+**Risk:** high — this is the core rewrite.
+**Gate:** T-0401, T-0402, T-0301, T-0307, T-0601, T-0602, T-0603, T-0604,
+T-0605, T-0606, plus the loop-yield test.
+
+| Task | Detail |
+| --- | --- |
+| `reasoning/` | Streaming `chat_stream`, providers, typed errors, `_strip_thinking` preserved (`reason.py:8`) |
+| `agent/harness/base.py` | `AgentHarness`, `TurnEvent`, `HarnessCaps` |
+| `agent/harness/native.py` | Our loop plus `reasoning/` plus `tools/` |
+| `agent/loop.py` | Single-turn gate, retained task, delta coalescing to ≤20 Hz |
+| Delete `understand.py`, `plan.py` | Keep `ToolCall` and `_repair_and_parse_json` |
+| Make the policy retry | `RETRY` and `FALLBACK` must actually act (ADR-0009) |
+| Merge `respond.py` into `agent/transcript.py` | One writer per turn |
+
+**Verify:** `pytest`; a conformance suite parametrized over harnesses;
+a loop-yield test proving no provider call blocks the loop.
+
+### Chunk 4 — pi spike, then adapter
+
+**Risk:** medium. The spike comes **first** so the adapter is not built on
+assumptions.
+**Gate:** T-0302, T-0303, T-0305, T-0306, T-0308, T-0309, T-0310.
+
+#### The spike, as an executable procedure
+
+Each step has a pass/fail, and the outcome is written back into
+[IF-0003](docs/contracts/protocols.md#if-0003-pi-rpc) and
+[research/pi-rpc.md](docs/research/pi-rpc.md). No step may be assumed.
+
+| Step | Action | Pass condition |
+| --- | --- | --- |
+| S1 | Run `./scripts/setup_pi.sh`; then `pi --version` | A version string prints; it equals the pinned version |
+| S2 | Confirm the binary path and record it | The path is stable and absolute; no `npm`/Node required |
+| S3 | Spawn `pi --mode rpc --no-session` with the start command; send `get_state` | One line of JSON returns with the same `id`, `success: true` |
+| S4 | Send `prompt` with a trivial message; capture stdout to a file | `disposition` ∈ {started, queued, handled}; the first line of stdout is valid JSON (purity) |
+| S5 | From the S4 capture, record every event type and the exact `message_end` content-block shape | The blocks are recorded as fixtures; the shape matches or corrects the mapping table |
+| S6 | Send a prompt that invokes a long-running tool, then send `abort` mid-tool | Record whether `abort` returns and whether the turn ends. **If it does not, the cancel path must fall back to process restart, and IF-0003 is corrected.** |
+| S7 | Send a second `prompt` while the first is still streaming | Record the error or the accepted behavior; the adapter must handle it, not crash |
+| S8 | Verify `--no-session` writes no session file | No file appears under the agent dir; record what `get_state` reports |
+| S9 | Write a non-JSON line and a wrong-shape line into the reader's input path | The reader logs and continues; the turn still reaches `agent_settled` |
+| S10 | Install `workspace_guard.ts`; ask pi to read a file outside the workspace | The tool call is blocked with our reason string |
+| S11 | Close stdin while a turn runs | pi exits cleanly (reap with no signal), and no cancel was attempted |
+
+Fixtures recorded in S5 and S9 become `tests/test_pi_events.py`. S6 and S7
+determine whether the "abort during a running tool" row stays unverified or is
+resolved, and whether cancellation needs a process-restart fallback.
+
+| Step | Detail |
+| --- | --- |
+| Spike | Install the pinned pi; verify the `[U]` items from IF-0003: `abort` during a running tool, `message_end` content-block shape, `--no-session` semantics, a `prompt` mid-stream |
+| Record fixtures | JSONL transcripts for the mapping tests |
+| Adapter | `agent/harness/pi/{process,protocol,events,adapter}.py` |
+| Extension | `pi_extensions/workspace_guard.ts` |
+| Provisioning | `scripts/setup_pi.sh`, standalone binary preferred (no Node) |
+
+**Verify:** fixture tests for the event mapping; malformed-line resilience; a
+kill-the-child-then-restart test; the workspace guard blocking an out-of-workspace
+path; no zombie after quit.
+
+### Chunk 5 — Voice pipeline
+
+**Risk:** highest. Ship in slices.
+**Gate:** T-0101..T-0108, of which T-0101..T-0105 and T-0107 are host-testable
+and T-0106/T-0108 need the audio rig.
+
+| Slice | Detail |
+| --- | --- |
+| 1 | Merge `ears` + `mouth` lifecycles into one module; fix the duplex FSM |
+| 2 | Playback: `sounddevice` callback stream plus MP3 decoding |
+| 3 | Capture: `sounddevice` input, 20 ms frames |
+| 4 | VAD plane, bounded queues, overflow policy |
+| 5 | Sentence chunker and streaming TTS |
+
+**Verify:** pure-logic tests for the chunker and queue; a mock-playback
+interrupt test; on-target latency and wake-gate checks on real hardware.
+
+### Chunk 6 — Orb
+
+**Risk:** medium.
+**Gate:** T-0201..T-0207; T-0201, T-0206 are manual on both OSes, the rest run
+against a fake bridge.
+
+| Slice | Detail |
+| --- | --- |
+| G1 | `bridge/` client plus an orb skeleton: frameless always-on-top window, a state-colored circle, WS connect/subscribe — so a GPU problem never blocks the orb existing |
+| G2 | Shader orb per `docs/ui/` |
+| G3 | Text input, interrupt, controls, packaging via `pyside6-deploy` |
+
+**Verify:** host tests with a fake bridge for state and delta handling; manual
+runs on macOS and Linux; reconnect resync.
+
+### Chunk 7 — Integration, cleanup, doc refresh
+
+**Gate:** the full suite passes on macOS **and** Linux, and every acceptance
+criterion in [scope.md](docs/requirements/scope.md) is checked by hand.
+
+| Task | Detail |
+| --- | --- |
+| End-to-end | Config-default demo path: voice → agent → harness → voice → orb |
+| Cleanup | Remove the web stub, `aiohttp`, `.gitmodules` |
+| Docs | Update to as-built; retire `ARCH.md` and `PLAN.md`; rewrite `README.md` |
+| Final verification | Full suite on macOS and Linux; manual acceptance per `docs/requirements/scope.md` |
+
+## Risk register
+
+| Risk | Retirement |
+| --- | --- |
+| pi behaviors assumed but unverified | The spike runs before the adapter; fixtures recorded |
+| pi child dies mid-turn | Supervised lifecycle with bounded restart; kill test |
+| User surprised by pi's permissions | Opt-in flag, workspace guard, no shell, and a written warning |
+| Double-contexting pi turns | Explicit rule, contract test, restart-only prime |
+| Qt and asyncio entanglement | Eliminated by the process split; `QWebSocket`, no qasync |
+| GPU work consumes the schedule | G1 ships a working circle before any shader work |
+| Linux audio differences | `sounddevice` plus a Linux hardware smoke in chunks 4–5 |
+| The rename breaks hidden string couplings | One isolated chunk, grep sweep, topic constants, test fence |
+| Delta flooding over the WS bridge | Publisher-side coalescing at ≤20 Hz |
+
+## Verification posture
+
+Stated per change, never assumed.
+
+| Chunk | Verification |
+| --- | --- |
+| 0 | well-formedness, link check, trace completeness |
+| 1 | `pytest`, live WS connect, non-loopback refusal |
+| 2 | grep for old names, full suite, test count delta |
+| 3 | `pytest`, conformance suite, loop-yield test |
+| 4 | fixture tests, child-kill test, workspace-guard test |
+| 5 | unit tests plus on-target audio rig |
+| 6 | fake-bridge host tests plus manual on both OSes |
+| 7 | full suite on both OSes, manual acceptance criteria |
+
+## Open questions
+
+Each with the default taken unless the user says otherwise.
+
+| # | Question | Default |
+| --- | --- | --- |
+| 1 | PTT start/end has no bus topic (noted in IF-0007) | Add `command.voice.ptt.start` / `.end` in chunk 1 |
+| 2 | The resync snapshot topic is undefined | Add `agent.transcript.snapshot` in chunk 1; the orb shows "resync pending" if a gap is detected before it exists |
+| 3 | Exact PCM playback queue depth | Tune during chunk 5 against the latency budget |
+| 4 | Which MP3 decoder | Decide in chunk 5; `miniaudio` is the leading candidate |
+| 5 | Wake phrase and identity | Ships as `jarvis` / "hi jarvis"; the `agents:` map already supports more |
+| 6 | pi provisioning: binary or npm | Standalone binary, so Node is not required |
+| 7 | Whether the orb should be a `.app` (macOS) | Yes, but notarization is deferred |
+| 8 | Whether `vision` and `messaging` should get real work | No — renamed and frozen this round |
+
+## Definition of done
+
+The acceptance criteria in
+[`docs/requirements/scope.md`](docs/requirements/scope.md), verifiable by a
+human on both macOS and Linux:
+
+1. Documented install and launch succeed on both OSes.
+2. A native orb window opens with no browser or web server involved.
+3. A spoken question gets a spoken answer, in `ptt`, `open`, and `wake` modes.
+4. The orb cycles through its states visibly during a turn.
+5. Stop cancels an in-flight turn and silences playback.
+6. Switching `harness` between `native` and `pi` in config changes the backend
+   with no code change.
+7. pi runs as a managed subprocess: prompts stream, `agent_settled` ends the
+   turn, and quitting leaves no orphan.
+8. A tool result reaches the spoken answer on the native path.
+9. Killing the harness mid-session shows backend-down and a visible error —
+   never silence.
+10. Unplugging the mic degrades to text/console without a crash.
+11. Console mode runs headless with transcript, status, and errors.
+12. No `brain`/`ears`/`mouth`/`eyes`/`hands`/`canvas`/`chat`/`cli` names remain.
+13. The suite passes under the new layout, with counts reported.
+14. With no backend installed, the app still starts and shows the setup path.

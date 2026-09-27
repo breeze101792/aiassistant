@@ -1,10 +1,10 @@
 import tempfile
 import os
 
-from brain.memory import MemoryManager
-from brain.embeddings import EmbeddingsEngine
-from brain.persona import Persona
-from brain.tools import ToolCache
+from aiassistant.agent.memory import MemoryManager
+from aiassistant.agent.embeddings import EmbeddingsEngine
+from aiassistant.agent.persona import Persona
+from aiassistant.agent.toolcache import ToolCache
 
 
 class TestMemoryManager:

@@ -1,9 +1,9 @@
 import tempfile
 import os
 
-from modules.scheduler.storage import ScheduleStorage
-from modules.scheduler.scheduler import SchedulerModule
-from bus.bus import MessageBus
+from aiassistant.scheduler.storage import ScheduleStorage
+from aiassistant.scheduler.module import SchedulerModule
+from aiassistant.bus.bus import MessageBus
 
 
 class TestScheduleStorage:

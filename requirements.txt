@@ -1,28 +1,11 @@
-# Message Bus
-aiohttp>=3.9
-websockets>=12.0
-
-# LLM Backends
-ollama>=0.4
-openai>=1.0
-tiktoken>=0.5
-
-# Tools
-duckduckgo-search>=6.0
-beautifulsoup4>=4.12
-
-# ASR (requires torch — install separately: pip install torch)
-funasr>=1.0
-webrtcvad>=2.0
-openai-whisper
-# torch  # uncomment and install: pip install torch
-
-# TTS
-edge-tts>=6.0
-
-# Audio I/O
-pyaudio>=0.2
-
-# Utilities
-pyyaml>=6.0
-tzlocal>=5.0
+# Dependencies are declared in pyproject.toml.
+#
+#   pip install -e .            core (bus, providers, voice I/O, scheduler)
+#   pip install -e '.[ui]'      adds PySide6 for the orb
+#   pip install -e '.[asr]'     adds whisper / funasr speech recognition
+#   pip install -e '.[tools]'   adds web search and HTML parsing
+#   pip install -e '.[dev]'     adds pytest
+#
+# This file is kept only so an existing `pip install -r requirements.txt` does
+# not silently install nothing. Use the commands above.
+-e .

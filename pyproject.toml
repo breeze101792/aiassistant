@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiassistant"
+version = "0.2.0"
+description = "Voice-first desktop assistant with a native orb UI and a swappable agent harness"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+    "pyyaml>=6.0",
+    "websockets>=12.0",
+    "ollama>=0.4",
+    "openai>=1.0",
+    "tiktoken>=0.5",
+    "sounddevice>=0.4",
+    "miniaudio>=1.59",
+    "webrtcvad>=2.0",
+    "edge-tts>=6.0",
+    "tzlocal>=5.0",
+]
+
+[project.optional-dependencies]
+# ASR is heavy and installed separately by choice.
+asr = ["openai-whisper", "funasr"]
+tools = ["duckduckgo-search>=6.0", "beautifulsoup4>=4.12"]
+ui = ["PySide6>=6.6"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+aiassistant = "aiassistant.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"
+filterwarnings = ["ignore::DeprecationWarning"]

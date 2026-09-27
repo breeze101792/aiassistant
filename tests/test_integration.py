@@ -1,11 +1,28 @@
 """Integration tests — full message flow with real Ollama."""
 import asyncio
 import pytest
-from bus.bus import MessageBus
-from brain.brain import BrainModule
-from modules.hands.hands import HandsModule
-from modules.scheduler.scheduler import SchedulerModule
-from llm.base import LLMBackend
+from aiassistant.bus.bus import MessageBus
+from aiassistant.agent.module import AgentModule
+from aiassistant.agent.harness.native import NativeHarness
+from aiassistant.tools.module import ToolsModule
+from aiassistant.scheduler.module import SchedulerModule
+from aiassistant.reasoning.base import LLMBackend, StreamChunk
+
+# A local model can take tens of seconds per turn. Tests that talk to the real
+# provider wait on this budget rather than a fixed sleep, so they neither race
+# nor depend on machine speed.
+TURN_TIMEOUT_S = 90.0
+
+
+async def wait_for(predicate, timeout: float = TURN_TIMEOUT_S, interval: float = 0.1) -> bool:
+    """Wait until predicate() is truthy, or the timeout expires."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if predicate():
+            return True
+        await asyncio.sleep(interval)
+    return predicate()
 
 
 class MockToolLLM(LLMBackend):
@@ -29,7 +46,7 @@ class MockToolLLM(LLMBackend):
                 "tool_calls": [{
                     "id": "call_001",
                     "name": "datetime",
-                    "arguments": "{}",
+                    "arguments": {},
                 }],
                 "usage": {"total_tokens": 30},
             }
@@ -39,6 +56,21 @@ class MockToolLLM(LLMBackend):
             "tool_calls": None,
             "usage": {"total_tokens": 20},
         }
+
+    def chat_stream(self, messages, tools=None, max_tokens=4096, temperature=0.7):
+        """Stream the same script as ``chat``, in pieces.
+
+        The harness consumes this path, so a mock that only implements
+        ``chat`` would not exercise the real flow.
+        """
+        result = self.chat(messages, tools=tools, max_tokens=max_tokens,
+                           temperature=temperature)
+        content = result.get("content") or ""
+        for word in content.split(" "):
+            yield StreamChunk(delta=word + " ")
+        yield StreamChunk(done=True, content=content,
+                          tool_calls=result.get("tool_calls"),
+                          usage=result.get("usage") or {})
 
     def embed(self, text):
         self.embed_calls.append(text if isinstance(text, list) else [text])
@@ -54,7 +86,7 @@ class MockToolLLM(LLMBackend):
 @pytest.fixture
 def config():
     return {
-        "brain": {
+        "agent": {
             "persona": "You are a helpful assistant. Be concise. Answer in 1-2 sentences.",
             "llm": {
                 "provider": "ollama",
@@ -75,7 +107,7 @@ def config():
             "embeddings": {"provider": "ollama", "model": "qwen3-embedding:0.6b", "url": "", "batch_size": 10},
             "thinking": {"max_reflect_loops": 3},
         },
-        "hands": {
+        "tools": {
             "tool_paths": ["./modules/hands/builtin_tools", "./modules/hands/skills"],
             "sandbox_default": False,
             "command_timeout": 30,
@@ -96,8 +128,8 @@ class TestTextChatFlow:
         bus = MessageBus()
 
         # Setup modules
-        brain = BrainModule(bus, config)
-        hands = HandsModule(bus, config)
+        brain = AgentModule(bus, config)
+        hands = ToolsModule(bus, config)
         sched = SchedulerModule(bus, config)
 
         assert await brain.setup()
@@ -120,7 +152,7 @@ class TestTextChatFlow:
         bus.user_input("What is 2+2? Answer in one short sentence.")
 
         # Wait for response
-        await asyncio.sleep(10)
+        await wait_for(lambda: len(responses) > 0)
 
         await brain.stop()
         await hands.stop()
@@ -136,8 +168,8 @@ class TestTextChatFlow:
     async def test_brain_with_tool_call(self, config):
         bus = MessageBus()
 
-        brain = BrainModule(bus, config)
-        hands = HandsModule(bus, config)
+        brain = AgentModule(bus, config)
+        hands = ToolsModule(bus, config)
         sched = SchedulerModule(bus, config)
 
         assert await brain.setup()
@@ -158,7 +190,7 @@ class TestTextChatFlow:
         # Ask something that should use the datetime tool
         bus.user_input("What day is it today? Use the datetime tool if available.")
 
-        await asyncio.sleep(15)
+        await wait_for(lambda: len(responses) > 0)
 
         await brain.stop()
         await hands.stop()
@@ -173,8 +205,8 @@ class TestTextChatFlow:
     async def test_conversation_memory(self, config):
         bus = MessageBus()
 
-        brain = BrainModule(bus, config)
-        hands = HandsModule(bus, config)
+        brain = AgentModule(bus, config)
+        hands = ToolsModule(bus, config)
         sched = SchedulerModule(bus, config)
 
         assert await brain.setup()
@@ -192,13 +224,14 @@ class TestTextChatFlow:
 
         bus.subscribe("response.text", on_response)
 
-        # First turn
+        # First turn: wait for its response before sending the second, so the
+        # supersede policy does not cancel work the test expects to observe.
         bus.user_input("My name is TestUser. Remember that.")
-        await asyncio.sleep(8)
+        await wait_for(lambda: len(responses) >= 1)
 
         # Second turn
         bus.user_input("What is my name?")
-        await asyncio.sleep(8)
+        await wait_for(lambda: len(responses) >= 2)
 
         await brain.stop()
         await hands.stop()
@@ -222,8 +255,8 @@ class TestModuleLifecycle:
         bus = MessageBus()
         modules = []
 
-        brain = BrainModule(bus, config)
-        hands = HandsModule(bus, config)
+        brain = AgentModule(bus, config)
+        hands = ToolsModule(bus, config)
         sched = SchedulerModule(bus, config)
 
         for mod in [brain, hands, sched]:
@@ -244,16 +277,15 @@ class TestToolCallingWithMockLLM:
     async def test_brain_receives_tool_schemas_from_hands(self, config):
         """Verify Brain subscribes to status.hands.ready and loads tool schemas."""
         bus = MessageBus()
-        brain = BrainModule(bus, config)
-        hands = HandsModule(bus, config)
+        brain = AgentModule(bus, config)
+        hands = ToolsModule(bus, config)
 
         await brain.setup()
         await hands.setup()
 
         # Replace with mock LLM after setup
         mock_llm = MockToolLLM()
-        brain.llm = mock_llm
-        brain._reasoner.llm = mock_llm
+        brain.harness = NativeHarness(mock_llm, persona="test")
 
         # Tools should be empty before Hands starts
         assert len(brain.tool_cache.tool_names) == 0
@@ -267,7 +299,7 @@ class TestToolCallingWithMockLLM:
         # After Hands starts, Brain should have loaded tools
         assert len(brain.tool_cache.tool_names) > 0
         assert "datetime" in brain.tool_cache.tool_names
-        assert brain._reasoner._tool_schemas is not None
+        assert brain.harness.tool_schemas is not None
 
         await brain.stop()
         await hands.stop()
@@ -276,15 +308,14 @@ class TestToolCallingWithMockLLM:
     async def test_full_tool_call_flow_with_mock_llm(self, config):
         """Full pipeline: user asks question → LLM calls tool → tool executes → LLM synthesizes."""
         bus = MessageBus()
-        brain = BrainModule(bus, config)
-        hands = HandsModule(bus, config)
+        brain = AgentModule(bus, config)
+        hands = ToolsModule(bus, config)
 
         await brain.setup()
         await hands.setup()
 
         mock_llm = MockToolLLM()
-        brain.llm = mock_llm
-        brain._reasoner.llm = mock_llm
+        brain.harness = NativeHarness(mock_llm, persona="test")
 
         await brain.start()
         await hands.start()
@@ -322,15 +353,14 @@ class TestToolCallingWithMockLLM:
     async def test_tool_call_response_reflects_tool_result(self, config):
         """The final response should be synthesized from tool results, not the first LLM response."""
         bus = MessageBus()
-        brain = BrainModule(bus, config)
-        hands = HandsModule(bus, config)
+        brain = AgentModule(bus, config)
+        hands = ToolsModule(bus, config)
 
         await brain.setup()
         await hands.setup()
 
         mock_llm = MockToolLLM()
-        brain.llm = mock_llm
-        brain._reasoner.llm = mock_llm
+        brain.harness = NativeHarness(mock_llm, persona="test")
 
         await brain.start()
         await hands.start()
@@ -359,15 +389,14 @@ class TestToolCallingWithMockLLM:
     async def test_direct_answer_without_tools(self, config):
         """When LLM doesn't return tool_calls, flow should work without tools."""
         bus = MessageBus()
-        brain = BrainModule(bus, config)
-        hands = HandsModule(bus, config)
+        brain = AgentModule(bus, config)
+        hands = ToolsModule(bus, config)
 
         await brain.setup()
         await hands.setup()
 
         mock_llm = MockToolLLM()
-        brain.llm = mock_llm
-        brain._reasoner.llm = mock_llm
+        brain.harness = NativeHarness(mock_llm, persona="test")
         # Override first response to NOT have tool_calls
         def no_tool_chat(messages, tools=None, **kwargs):
             return {"content": "Hello! How can I help?", "tool_calls": None, "usage": {}}
