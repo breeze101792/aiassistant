@@ -82,6 +82,96 @@ class TestMerge:
         assert base["voice"]["hotwords"] == ["c"]
 
 
+class TestLegacyMigration:
+    """REQ-CFG-004: old section keys are accepted, warned, and mapped.
+
+    schemas.md:275-290 names every rename. A top-level-only map would silently
+    drop a real user's config, so each section and the unit-bearing key is
+    pinned here.
+    """
+
+    def test_section_renames_are_mapped(self):
+        raw = {
+            "brain": {"persona": "X"},
+            "ears": {"backend": "whisper"},
+            "mouth": {"backend": "edge_tts"},
+            "hands": {"sandbox_default": True},
+            "eyes": {"backend": "opencv"},
+            "chat": {"telegram_token": "t"},
+            "cli": {"prompt": "$ "},
+        }
+        migrated = migrate_legacy(dict(raw))
+        assert migrated["agent"]["persona"] == "X"
+        assert migrated["voice"]["backend"] == "whisper"
+        assert migrated["voice_tts"]["backend"] == "edge_tts"
+        assert migrated["tools"]["sandbox_default"] is True
+        assert migrated["vision"]["backend"] == "opencv"
+        assert migrated["messaging"]["telegram_token"] == "t"
+        assert migrated["console"]["prompt"] == "$ "
+        assert not (set(raw) & set(migrated)), "legacy sections are consumed"
+
+    def test_nested_legacy_keys_keep_their_mapping(self):
+        migrated = migrate_legacy(dict({
+            "brain": {"llm": {"model": "m1", "provider": "openai"}},
+        }))
+        assert migrated["agent"]["llm"] == {"model": "m1", "provider": "openai"}
+
+    def test_silence_timeout_unit_is_scaled_to_ms(self):
+        """``ears.silence_timeout`` is seconds; the new key is milliseconds."""
+        migrated = migrate_legacy(dict({"ears": {"silence_timeout": 3}}))
+        assert migrated["voice"]["endpoint_silence_ms"] == 3000
+
+    def test_removed_section_is_dropped(self):
+        migrated = migrate_legacy(dict({"canvas": {"web_port": 1}}))
+        assert "canvas" not in migrated
+
+    def test_a_new_key_wins_over_a_legacy_one(self):
+        """``setdefault`` keeps the canonical section when both are present."""
+        migrated = migrate_legacy(dict({
+            "agent": {"persona": "new"},
+            "brain": {"persona": "old"},
+        }))
+        assert migrated["agent"]["persona"] == "new"
+
+
+class TestAgentsMap:
+    """REQ-CFG-006: the ``agents:`` map defines one or more identities.
+
+    schemas.md:200-223 and data-model.md describe an ``agents:`` map with
+    ``agents.active``. The ``DEFAULTS`` and every module read the singular
+    ``agent`` section instead, so a config written to the documented shape is
+    ignored. Pinned as an xfail, not silently accepted.
+    """
+
+    def test_single_agent_section_still_works(self):
+        from aiassistant.agent.module import AgentModule
+        from aiassistant.bus.bus import MessageBus
+
+        mod = AgentModule(MessageBus(), {"agent": {"persona": "I am X"}})
+        assert "I am X" in mod.persona.get_system_prompt()
+
+    @pytest.mark.xfail(strict=True,
+                       reason="BUG-7: schemas.md documents an agents: map with "
+                              "agents.active, but AgentModule reads only the "
+                              "singular agent section")
+    def test_documented_agents_map_supplies_the_active_agent(self):
+        from aiassistant.agent.module import AgentModule
+        from aiassistant.bus.bus import MessageBus
+
+        mod = AgentModule(MessageBus(), {
+            "agents": {
+                "active": "jarvis",
+                "jarvis": {
+                    "harness": "native",
+                    "persona": "I am Jarvis",
+                    "llm": {"provider": "openai", "model": "gpt-x"},
+                },
+            },
+        })
+        assert "I am Jarvis" in mod.persona.get_system_prompt()
+        assert mod.llm_config.get("model") == "gpt-x"
+
+
 class TestExampleMatchesDefaults:
     """config.example.yaml is the documented view of DEFAULTS.
 

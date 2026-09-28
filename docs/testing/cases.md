@@ -110,6 +110,11 @@ Coverage and the reverse T → REQ map: [trace.md](trace.md).
 | T-1303 | Example matches the defaults | REQ-CFG-008 | host | — | Parse both | Same keys and values; no drift | `tests/test_config.py` |
 | T-0907 | Headless autodetect | REQ-CONSOLE-006 | host | No display-server env; `display.mode: auto` | Resolve the display mode | Console is chosen; with a display var set, orb is chosen; `AIASSISTANT_DISPLAY_OFF` forces console; `--mode ui` overrides it | `tests/test_display.py` |
 | T-0908 | Help names the wake phrase | REQ-CONSOLE-007 | host | `voice.hotwords` set and empty | Run `/help` (console) and open the TUI help | The configured phrase is printed, quoted; with none, the line says input is not gated; no hard-coded phrase | `tests/test_console.py`, `tests/test_tui.py` |
+| T-0909 | Prompt survives async output | REQ-CONSOLE-008 | host | Prompt shown; a banner, turn, and log record arrive | Emit while the prompt is up | Each lands above the prompt; the prompt is redrawn and never glued to the text; logs stay on stderr | `tests/test_console.py`, `tests/test_display.py` |
+| T-0910 | Streamed answer printed once | REQ-CONSOLE-009 | host | A run of text deltas then `agent.final` | Replay the stream | One `Assistant:` label; the final settles the same line with CR; the answer is never shown twice | `tests/test_console.py` |
+| T-0911 | Reasoning is not transcript | REQ-CONSOLE-010 | host | Thinking deltas and a reasoning summary | Replay them | Neither appears in stdout; both are logged at debug; the summary shows only with `/thinking` on | `tests/test_console.py` |
+| T-0912 | Input echoed exactly once | REQ-CONSOLE-011 | host | tty stdin and piped stdin | Submit a line each way | On a tty the line is not re-printed; piped input appears as `You: ...`; the turn is published either way; voice transcript shown | `tests/test_console.py` |
+| T-0913 | Wrapped answer appears once | REQ-CONSOLE-009 | host | An answer long enough to wrap, streamed in chunks | Render the captured output | The answer and its `Assistant:` label appear once; a mid-stream revision erases every streamed row | `tests/test_console.py`, `tests/screen.py` |
 | T-0906 | `/stop` produces a cancelled turn | REQ-CONV-003, REQ-WAKE-005 | host | Turn in flight | Issue `/stop` | Publishes `command.agent.interrupt`; turn ends cancelled; no final | console.md Commands / flows.md (c) |
 
 ## Scheduler — `tests/test_scheduler.py`
@@ -131,3 +136,23 @@ flagged `scope creep` in [trace.md](trace.md).
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | T-1101 | Vision backend selection and stub | REQ-STRUCT-001 | host | `vision.backend: stub` | Construct, `setup()`, `capture()`, `analyze()` | Module name `vision`; stub backend selected; placeholder frame fields present | frozen-modules.md vision |
 | T-1102 | Messaging ingest and delivery | REQ-STRUCT-001 | host (fake backend) | Fake platform backend | Inject an inbound message; deliver an `agent.final` | Inbound maps to `user.input.text`; outbound delivered; module name `messaging` | frozen-modules.md messaging |
+
+## Gap-closing cases added 2026-09-28
+
+These were `unverified` in the matrix; the code path existed but no test proved
+it. The `BUG-*` rows carry `xfail(strict=True)`: they fail on current code by
+design and go green when the defect is fixed.
+
+| ID | Title | REQ(s) | Method | Preconditions | Steps | Expected | Contract clause |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| T-0403 | Missing terminal event fails visibly | REQ-CONV-006 | host | Harness whose `run_turn` emits deltas but no terminal event | Run a turn | Exactly one `agent.turn.error` (`class: harness`); no `agent.final` fabricated | agent.md INVARIANTS |
+| T-0404 | `conversation.busy: queue` does not cancel | REQ-CONV-002 | host (BUG-4) | `conversation.busy: queue`; turn in flight | Start a second turn | First turn survives; second is queued, not superseded | schemas.md `conversation.busy` |
+| T-0704 | Path escape is refused (real-path) | REQ-TOOL-004 | host (BUG-1) | Sandbox safe root `/tmp/aiassistant` | Check `/tmp/aiassistant-evil/x`, `./workspace-evil/x`, and a symlink out of the root | All refused; inside paths allowed | tools.md `Sandbox.check_path` |
+| T-0703 | Tool timeout honours the documented key | REQ-TOOL-003 | host (BUG-2) | `tools.timeout_s: 0.5` | Construct `ToolsModule` | `command_timeout == 0.5` | schemas.md `tools.timeout_s` |
+| T-0109 | `halasr` backend selection | REQ-VOICE-004 | host (BUG-5) | `voice.backend: halasr` (`--audio`) | `_build_asr()` | Returns `HalASRBackend`, not the silent stub fallback | voice.md backend selection |
+| T-1006 | Overdue recurring task re-arms into the future | REQ-SCHED-003 | host (BUG-3) | Daily task overdue by 3 days | Run the clock loop | Fires once; stored next time is future | scheduler.md INVARIANTS |
+| T-0607 | Embeddings search round-trip and dedup | REQ-MEM-001 | host | Fake embedding backend | Index turns and a fact twice; search | Turns retrievable; a re-indexed fact updates, not duplicates | data-model.md embeddings cache |
+| T-0608 | Unavailable latch clears on a new backend | REQ-MEM-006 | host (BUG-6) | Provider that raises once | `set_llm()` a working backend, then embed | The latch is cleared and embedding works | reasoning.md OWNS |
+| T-1304 | Legacy section and key migration | REQ-CFG-004 | host | Old `brain`/`ears`/`mouth`/`hands`/`eyes`/`chat`/`cli` sections | `migrate_legacy()` | Mapped to new sections; seconds scaled to ms; `canvas` dropped | schemas.md legacy migration |
+| T-1305 | Unknown timeout key is named | REQ-CFG-003 | host (BUG-2) | `tools.timeout_s` set | Load config and construct the module | The documented key is the one read | schemas.md key table |
+| T-1601 | `agents:` map resolves the active agent | REQ-CFG-006 | host (BUG-7) | `agents:` map with two entries and `agents.active` | Start `AgentModule` | Persona/llm come from the active entry | schemas.md `agents:` |

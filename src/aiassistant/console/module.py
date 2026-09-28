@@ -2,11 +2,15 @@ import asyncio
 import logging
 import os
 import readline
+import re
+import shutil
 import signal
 import sys
+import unicodedata
 
 from aiassistant.base import BaseModule
 from aiassistant.bus import topics
+from aiassistant import terminal
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +20,36 @@ HISTORY_MAX = 1000
 # Poll interval for stdin readability when no tty reader is available.
 _POLL_INTERVAL_S = 0.2
 
+# Clear the current line before overwriting it (the prompt or a status line).
+_CLEAR_LINE = "\r\x1b[K"
+
+# The label that opens an assistant transcript line.
+ASSISTANT_LABEL = "Assistant:"
+
+# Terminal width when it cannot be measured (the conventional default).
+_DEFAULT_COLUMNS = 80
+
+# ANSI escape sequences, stripped to measure wrapped text by visible width.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+
 # Returned by the poll helper when no complete line is ready yet.
 _NO_LINE = object()
+
+
+def _display_width(text: str) -> int:
+    """Terminal columns ``text`` occupies.
+
+    A wide character (CJK, many emoji) takes two columns and a combining mark
+    takes none, so the character count is not the display width. The persona
+    matches the user's language, so a CJK answer is normal and a character
+    count would understate the rows it wraps to.
+    """
+    width = 0
+    for char in text:
+        if unicodedata.combining(char):
+            continue
+        width += 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+    return width
 
 
 class ConsoleModule(BaseModule):
@@ -41,6 +73,16 @@ class ConsoleModule(BaseModule):
         # are unchanged.
         self._owns_terminal = True
         self._streaming = False
+        # The text streamed so far and the label that opened the line, so the
+        # final can tell whether the line is already correct and, if the model
+        # revised, erase exactly the rows the stream occupied. Erasing only the
+        # last row duplicates a wrapped answer (REQ-CONSOLE-009).
+        self._streamed_text = ""
+        self._stream_prefix = ""
+        # Whether the prompt is currently on screen. The read loop draws it and
+        # every async writer redraws it through `_emit`, so the console is the
+        # single owner of the prompt line.
+        self._prompt_shown = False
 
     async def setup(self) -> bool:
         logger.info("Console setup complete")
@@ -48,6 +90,9 @@ class ConsoleModule(BaseModule):
 
     async def start(self) -> None:
         self._running = True
+        # The console owns the prompt line, so async output can be inserted
+        # above it instead of colliding with it.
+        terminal.set_prompt_writer(self._emit)
         # Text is always available (ADR-0017), so subscribe to the live topics.
         # These were previously the as-built status.ears.* names, which nothing
         # publishes, so the status handlers never ran.
@@ -80,7 +125,9 @@ class ConsoleModule(BaseModule):
         """Yield the tty to another frontend (the TUI). Idempotent."""
         if not self._owns_terminal:
             return
+        self._clear_prompt()
         self._owns_terminal = False
+        terminal.set_prompt_writer(None)
         task = self._read_task
         self._read_task = None
         self._remove_reader()
@@ -95,15 +142,54 @@ class ConsoleModule(BaseModule):
         self._owns_terminal = True
         self._start_reader()
         logger.info("Console terminal I/O resumed")
-        self._render(f"\n{self.prompt}")
+        self._show_prompt()
 
     def _render(self, text: str) -> None:
         """Write to the terminal unless another frontend owns it."""
         if self._owns_terminal:
             print(text, end="", flush=True)
 
+    # ── Prompt ownership ─────────────────────────────────────
+
+    def _emit(self, text: str) -> None:
+        """Write output from an async writer (a handler, or the log handler).
+
+        The prompt is erased first and redrawn afterwards, so the text lands on
+        its own line and the prompt is never left glued to a banner or missing.
+        This is the callback registered with `terminal.set_prompt_writer`.
+        """
+        if not self._owns_terminal:
+            return
+        if self._prompt_shown:
+            # Erase the prompt, write the text on that line, then redraw below.
+            print(_CLEAR_LINE + text, end="", flush=True)
+            if not text.endswith("\n"):
+                print()
+            self._show_prompt()
+            return
+        print(text, end="", flush=True)
+        if not text.endswith("\n"):
+            print()
+
+    def _show_prompt(self) -> None:
+        """Draw the prompt at an empty line and mark it on screen."""
+        if not self._owns_terminal:
+            return
+        print(self.prompt, end="", flush=True)
+        self._prompt_shown = True
+
+    def _clear_prompt(self) -> None:
+        """Erase the on-screen prompt before writing a line of its own."""
+        if self._prompt_shown:
+            print(_CLEAR_LINE, end="", flush=True)
+            self._prompt_shown = False
+
     async def stop(self) -> None:
         self._running = False
+        # Release the prompt line so a later writer does not call into a stopped
+        # console.
+        terminal.set_prompt_writer(None)
+        self._prompt_shown = False
         # Cancel the reader rather than waiting for it. It may be parked on a
         # blocking stdin read, and waiting would stall shutdown — which is why
         # Ctrl+C used to hang (see _read_loop).
@@ -167,12 +253,10 @@ class ConsoleModule(BaseModule):
         except (ValueError, OSError, NotImplementedError):
             self._reader_added = False
 
-        prompt_shown = False
         try:
             while self._running:
-                if not prompt_shown:
-                    print(self.prompt, end="", flush=True)
-                    prompt_shown = True
+                if not self._prompt_shown:
+                    self._show_prompt()
 
                 if self._reader_added:
                     line = await queue.get()
@@ -185,8 +269,7 @@ class ConsoleModule(BaseModule):
                     logger.info("stdin closed")
                     break
 
-                print("\r\x1b[K", end="")
-                prompt_shown = False
+                self._clear_prompt()
                 if not await self._handle_line(line.strip()):
                     break
         except asyncio.CancelledError:
@@ -245,56 +328,142 @@ class ConsoleModule(BaseModule):
             self._print_help()
             return True
 
-        self._render("Thinking...")
+        # Echo the input only when the terminal is not already doing it. On a
+        # tty the line is echoed at the prompt, so printing it again makes the
+        # user read their own input twice (REQ-CONSOLE-011). A piped or
+        # redirected run has no echo, so the transcript keeps the turn there.
+        if not self._stdin_echoes():
+            self._emit(f"\033[32mYou: {line}\033[0m")
         self.bus.user_input(line)
         return True
+
+    @staticmethod
+    def _stdin_echoes() -> bool:
+        """Whether the terminal echoes typed input back to the screen."""
+        try:
+            return sys.stdin.isatty()
+        except (ValueError, AttributeError):
+            return False
 
     async def _handle_delta(self, topic: str, payload: dict) -> None:
         """Render assistant text incrementally (REQ-CONSOLE-005).
 
-        Thinking deltas are not transcript text. The first text delta settles
-        the "Thinking..." marker and opens the assistant line; later deltas
-        append in place.
+        The line is opened once and appended to in place; the prompt stays
+        erased for the whole stream so later deltas cannot land after it. The
+        text is accumulated so ``_handle_final`` can settle the line without
+        reprinting it.
+
+        Thinking is not transcript text. It goes to the debug log, never to the
+        transcript, so a reasoning model cannot echo its scratchpad into the
+        conversation.
         """
-        if payload.get("kind", "text") == "thinking":
-            return
         text = payload.get("text", "")
+        if payload.get("kind", "text") == "thinking":
+            if text:
+                logger.debug("thinking: %s", text)
+            return
         if not text:
             return
         if not self._streaming:
             self._streaming = True
-            self._render(f"\r\x1b[KAssistant: {text}")
-        else:
-            self._render(text)
+            self._clear_prompt()
+            self._stream_prefix = f"{ASSISTANT_LABEL} "
+            self._render(self._stream_prefix)
+        self._streamed_text += text
+        self._render(text)
 
     async def _handle_final(self, topic: str, payload: dict) -> None:
         text = payload.get("text", "")
-        thinking = payload.get("thinking")
-        # Settle the authoritative text on the line the deltas were streaming to.
-        self._render(f"\r\x1b[KAssistant: {text}")
+        if self._streaming:
+            if text == self._streamed_text:
+                # The stream already rendered the authoritative text. Just end
+                # the line: reprinting it would duplicate a wrapped answer.
+                self._render("\n")
+            else:
+                # The model revised. Erase the rows the stream used and write
+                # the final text once, so no partial text is left behind.
+                self._erase_streamed_rows()
+                self._render(f"{ASSISTANT_LABEL} {text}\n")
+            self._streaming = False
+            self._streamed_text = ""
+            self._stream_prefix = ""
+            self._show_thinking_note(payload)
+            self._show_prompt()
+            return
+        # No deltas: `_emit` writes the line and redraws the prompt itself.
+        self._emit(f"{ASSISTANT_LABEL} {text}")
         self._streaming = False
-        if self._show_thinking and thinking:
-            self._render(f"\n\033[90m  [{thinking[:200]}]\033[0m")
-        self._render(f"\n{self.prompt}")
+        self._show_thinking_note(payload)
+
+    def _erase_streamed_rows(self) -> None:
+        """Erase the physical rows the streamed line occupies.
+
+        A streamed answer wraps, so the cursor sits on its last row. Moving up
+        one row per line and clearing each removes the whole streamed block;
+        clearing only the cursor row leaves the earlier rows and duplicates the
+        answer when the final is written.
+        """
+        rows = self._wrapped_rows(self._stream_prefix + self._streamed_text)
+        if rows > 1:
+            self._render(f"\r\x1b[{rows - 1}A")
+        # Clear each row from the bottom-most upward, ending back at column 0.
+        self._render("\r\n".join("\x1b[2K" for _ in range(rows)))
+        if rows > 1:
+            self._render(f"\x1b[{rows - 1}A")
+        self._render("\r")
+
+    def _wrapped_rows(self, text: str) -> int:
+        """How many terminal rows ``text`` occupies.
+
+        Uses the display width, not the character count: a CJK or emoji
+        character occupies two columns, so counting characters would understate
+        the rows and leave the top of a wrapped block on screen.
+        """
+        columns = self._terminal_columns()
+        width = _display_width(_ANSI_RE.sub("", text))
+        if width <= 0:
+            return 1
+        return (width + columns - 1) // columns
+
+    def _terminal_columns(self) -> int:
+        """The terminal width, falling back to the conventional default."""
+        try:
+            columns = shutil.get_terminal_size(fallback=(_DEFAULT_COLUMNS, 24)).columns
+        except (ValueError, OSError):
+            return _DEFAULT_COLUMNS
+        return columns if columns > 0 else _DEFAULT_COLUMNS
+
+    def _show_thinking_note(self, payload: dict) -> None:
+        """Optionally show a reasoning summary, only when /thinking is on.
+
+        Off by default: the summary is diagnostic, so it is logged and shown
+        only on request, never mixed into the answer.
+        """
+        thinking = payload.get("thinking")
+        if not thinking:
+            return
+        logger.debug("thinking summary: %s", thinking[:200])
+        if self._show_thinking:
+            self._emit(f"\033[90m  [{thinking[:200]}]\033[0m")
 
     async def _handle_voice_state(self, topic: str, payload: dict) -> None:
         state = payload.get("state", "")
         if state == "listening":
-            self._render("\r\x1b[K\033[33m● Listening...\033[0m")
+            self._emit("\033[33m● Listening...\033[0m")
         elif state in ("transcribing", "thinking"):
-            self._render("\r\x1b[K\033[36m● Processing...\033[0m")
+            self._emit("\033[36m● Processing...\033[0m")
 
     async def _handle_transcribed(self, topic: str, payload: dict) -> None:
         text = payload.get("text", "")
-        self._render(f"\r\x1b[K\033[32mYou: {text}\033[0m\n{self.prompt}")
+        self._emit(f"\033[32mYou: {text}\033[0m")
 
     async def _handle_ready(self, topic: str, payload: dict) -> None:
-        self._render("Ready. Type /help for commands.\n")
+        self._emit("Ready. Type /help for commands.")
 
     async def _handle_error(self, topic: str, payload: dict) -> None:
         message = payload.get("message") or payload.get("error", "unknown")
         self._streaming = False
-        self._render(f"\n[!] Error ({topic}): {message}\n{self.prompt}")
+        self._emit(f"[!] Error ({topic}): {message}")
 
     def _set_log_level(self, line: str):
         arg = line[4:].strip()

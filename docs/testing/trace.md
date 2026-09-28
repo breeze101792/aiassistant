@@ -21,7 +21,7 @@ All 93 requirements from
 | REQ-VOICE-001 | verified | T-0101, T-0102 | mock, host |
 | REQ-VOICE-002 | verified | T-0103 | host |
 | REQ-VOICE-003 | verified | T-0108 | rig |
-| REQ-VOICE-004 | **unverified — no voice backend-selection case; `test_voice.py` must add one** | — | — |
+| REQ-VOICE-004 | **failing test, real bug (BUG-5)** — T-0109 proves `halasr` does not select `HalASRBackend` | T-0109 | host |
 | REQ-VOICE-005 | verified | T-0107 | host |
 | REQ-VOICE-006 | verified | T-0104, T-0105 | mock, host |
 
@@ -43,11 +43,11 @@ All 93 requirements from
 | REQ | Status | Proving T | Method |
 | --- | --- | --- | --- |
 | REQ-CONV-001 | **unverified — native context window (`context_turns`) not tested** | — | — |
-| REQ-CONV-002 | verified | T-0301 | host |
+| REQ-CONV-002 | **failing test, real bug (BUG-4)** — `busy: queue` documented but unimplemented; T-0404 proves it cancels instead | T-0404 | host |
 | REQ-CONV-003 | verified | T-0303, T-0204, T-0906 | host, mock |
 | REQ-CONV-004 | verified | T-0903, T-0402 | host |
 | REQ-CONV-005 | **unverified — `speak_text_turns: false` not tested** | — | — |
-| REQ-CONV-006 | verified | T-0401 | host |
+| REQ-CONV-006 | verified | T-0401, T-0403 | host |
 
 ### Orb UI
 
@@ -82,20 +82,20 @@ All 93 requirements from
 | --- | --- | --- | --- |
 | REQ-TOOL-001 | verified | T-0602, T-0702 | host |
 | REQ-TOOL-002 | verified | T-0701 | host |
-| REQ-TOOL-003 | verified | T-0703 | host |
-| REQ-TOOL-004 | verified | T-0704 | host |
+| REQ-TOOL-003 | **failing test, real bug (BUG-2)** — `tools.timeout_s` documented, `command_timeout` read; T-0703 pins the documented key | T-0703 | host |
+| REQ-TOOL-004 | **failing test, real bug (BUG-1)** — T-0704 proves prefix and symlink escapes pass `startswith` containment | T-0704 | host |
 | REQ-TOOL-005 | verified | T-0705 | host |
 
 ### Memory
 
 | REQ | Status | Proving T | Method |
 | --- | --- | --- | --- |
-| REQ-MEM-001 | verified | T-0402 | host |
+| REQ-MEM-001 | verified | T-0402, T-0607 | host |
 | REQ-MEM-002 | verified | T-0402 | host |
 | REQ-MEM-003 | **unverified — resume across restarts not tested** | — | — |
 | REQ-MEM-004 | **unverified — no case asserts memory with a non-native harness** | — | — |
 | REQ-MEM-005 | **unverified — no-secret-in-memory assertion missing** | — | — |
-| REQ-MEM-006 | verified | T-0605 | host (loop-yield) |
+| REQ-MEM-006 | **failing test, real bug (BUG-6)** — T-0608 proves the unavailable latch is never cleared by `set_llm()` | T-0605, T-0608 | host (loop-yield) |
 
 ### Console
 
@@ -108,6 +108,10 @@ All 93 requirements from
 | REQ-CONSOLE-005 | verified | T-0905 | host |
 | REQ-CONSOLE-006 | verified | T-0907 | host |
 | REQ-CONSOLE-007 | verified | T-0908 | host |
+| REQ-CONSOLE-008 | verified | T-0909 | host |
+| REQ-CONSOLE-009 | verified | T-0910, T-0913 | host |
+| REQ-CONSOLE-010 | verified | T-0911 | host |
+| REQ-CONSOLE-011 | verified | T-0912 | host |
 | REQ-FRONTEND-001 | verified | T-1201, T-1210 | host |
 | REQ-FRONTEND-002 | verified | T-1202 | host |
 | REQ-FRONTEND-003 | verified | T-1203 | host |
@@ -138,10 +142,10 @@ All 93 requirements from
 | REQ-CFG-002 | **partially verified** — CLI/env layering tested (T-1212); full chain unverified | T-1212 | host |
 | REQ-CFG-007 | verified | T-1301, T-1302 | host |
 | REQ-CFG-008 | verified | T-1303 | host |
-| REQ-CFG-003 | **unverified — invalid-key error not tested** | — | — |
-| REQ-CFG-004 | **unverified — legacy-key migration not tested** | — | — |
+| REQ-CFG-003 | **failing test, real bug (BUG-2)** — T-0703/T-1305 prove a documented key is silently ignored | T-1305 | host |
+| REQ-CFG-004 | verified — T-1304 covers every section rename and the seconds→ms scale | T-1304 | host |
 | REQ-CFG-005 | **unverified — no-secrets-in-config is an inspection claim; no T asserts it** | — | — |
-| REQ-CFG-006 | **unverified — multi-agent `agents:` map not tested** | — | — |
+| REQ-CFG-006 | **failing test, real bug (BUG-7)** — T-1601 proves the documented `agents:` map is ignored; `AgentModule` reads singular `agent` | T-1601 | host |
 
 ### Structure and refactor
 
@@ -173,7 +177,7 @@ tests trace rather than being flagged as scope creep.
 | --- | --- | --- | --- |
 | REQ-SCHED-001 | verified | T-1001, T-1005 | host |
 | REQ-SCHED-002 | verified | T-1002 | host |
-| REQ-SCHED-003 | verified | T-1003 | host |
+| REQ-SCHED-003 | **failing test, real bug (BUG-3)** — T-1006 proves an overdue recurring task re-arms into the past and re-fires every tick | T-1003, T-1006 | host |
 | REQ-SCHED-004 | verified | T-1004 | host |
 
 ### Security
@@ -197,6 +201,7 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 | T-0101 | Segment → transcript published | REQ-VOICE-001 |
 | T-0102 | Bounded segment queue drops oldest | REQ-VOICE-001 |
 | T-0103 | Chunker flushes at sentence boundary | REQ-VOICE-002 |
+| T-0109 | `halasr` backend selection | REQ-VOICE-004 |
 | T-0104 | Stop flag silences playback | REQ-WAKE-005, REQ-VOICE-006 |
 | T-0105 | State machine rejects impossible transitions | REQ-WAKE-006, REQ-VOICE-006 |
 | T-0106 | Wake phrase strips and gates | REQ-WAKE-002, REQ-WAKE-003 |
@@ -216,6 +221,8 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 | T-0307 | `call_id` correlation | REQ-HARNESS-002 |
 | T-0401 | Every turn is terminal | REQ-CONV-006 |
 | T-0402 | Turn persisted exactly once | REQ-MEM-001, REQ-MEM-002 |
+| T-0403 | Missing terminal event fails visibly | REQ-CONV-006 |
+| T-0404 | `busy: queue` does not cancel | REQ-CONV-002 |
 | T-0501 | Pub/sub delivery | REQ-STRUCT-003 |
 | T-0502 | Bad subscriber isolation | REQ-STRUCT-003 |
 | T-0503 | Cross-thread publish | REQ-STRUCT-003 |
@@ -233,10 +240,12 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 | T-0604 | Thinking tags stripped from final text | REQ-ORB-002, REQ-ORB-005 |
 | T-0605 | No provider call blocks the loop | REQ-MEM-006 |
 | T-0606 | Provider error is typed, not silent | REQ-ERR-001 |
+| T-0607 | Embeddings search round-trip and dedup | REQ-MEM-001 |
+| T-0608 | Unavailable latch clears on a new backend | REQ-MEM-006 |
 | T-0701 | Discovery from configured paths | REQ-TOOL-002 |
 | T-0702 | Tool call round-trip through the agent | REQ-TOOL-001 |
-| T-0703 | Timeout returns an error | REQ-TOOL-003 |
-| T-0704 | Path escape is refused | REQ-TOOL-004 |
+| T-0703 | Timeout honours the documented key | REQ-TOOL-003, REQ-CFG-003 |
+| T-0704 | Path escape is refused (real-path) | REQ-TOOL-004 |
 | T-0705 | Skill tool and LLM calls both complete | REQ-TOOL-005 |
 | T-0901 | Headless run is usable | REQ-CONSOLE-001 |
 | T-0902 | Same topics as the orb | REQ-CONSOLE-002 |
@@ -246,6 +255,11 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 | T-0906 | `/stop` produces a cancelled turn | REQ-CONV-003, REQ-WAKE-005 |
 | T-0907 | Headless autodetect | REQ-CONSOLE-006 |
 | T-0908 | Help names the wake phrase | REQ-CONSOLE-007 |
+| T-0909 | Prompt survives async output | REQ-CONSOLE-008 |
+| T-0910 | Streamed answer printed once | REQ-CONSOLE-009 |
+| T-0911 | Reasoning is not transcript | REQ-CONSOLE-010 |
+| T-0912 | Input echoed exactly once | REQ-CONSOLE-011 |
+| T-0913 | Wrapped answer appears once | REQ-CONSOLE-009 |
 | T-1201 | Frontend enum and aliases | REQ-FRONTEND-001 |
 | T-1202 | Frontend precedence | REQ-FRONTEND-002 |
 | T-1203 | auto resolution by host | REQ-FRONTEND-003 |
@@ -265,29 +279,51 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 | T-1003 | Recurring task re-arms future | REQ-SCHED-003 |
 | T-1004 | `max_pending` refuses adds | REQ-SCHED-004 |
 | T-1005 | Storage survives reload | REQ-SCHED-001 |
+| T-1006 | Overdue recurring task re-arms future | REQ-SCHED-003 |
+| T-1304 | Legacy section and key migration | REQ-CFG-004 |
+| T-1305 | Unknown timeout key is named | REQ-CFG-003 |
+| T-1601 | `agents:` map resolves the active agent | REQ-CFG-006 |
 | T-1101 | Vision backend selection and stub | REQ-STRUCT-001 |
 | T-1102 | Messaging ingest and delivery | REQ-STRUCT-001 |
 
 ## 3. Summary
 
+Refined 2026-09-28 after the gap-closing pass. Counts are doc cases, not pytest
+node ids; the suite collects 400 node ids across 24 files.
+
 | Count | Value |
 | --- | --- |
 | Total requirements | 93 |
 | Requirements withdrawn 2026-09-27 (external harness removed) | 7 |
-| Requirements verified (full) | 63 |
+| Requirements verified (full) | 67 |
+| Requirements with a failing proving test (real bugs) | 8 (REQ-VOICE-004, REQ-CONV-002, REQ-TOOL-003, REQ-TOOL-004, REQ-MEM-006, REQ-CFG-003, REQ-CFG-006, REQ-SCHED-003) |
 | Requirements partial (a proving T covers part of the clause) | 2 (REQ-STRUCT-001, REQ-CFG-002) |
-| Requirements `unverified` | 28 |
-| Total test cases | 72 |
-| Cases tracing to a REQ | 72 |
+| Requirements `unverified` | 20 |
+| Total test cases | 84 |
+| Cases tracing to a REQ | 84 |
 | Cases flagged scope creep | 0 |
 
-The 28 unverified requirements cluster in four backlog areas the current T set
-does not touch: **configuration** (5, with REQ-CFG-002 partial),
-**first-run/setup** (3), **platform** (3), and **structure** (3), plus the
-deferred and inspection-only behavior in voice/wake/orb (`REQ-VOICE-004`,
-`REQ-WAKE-001/004/007/008`, `REQ-CONV-001/005`, `REQ-ORB-003/004`,
-`REQ-HARNESS-001/008`, `REQ-MEM-003/004/005`). The security backlog is gone: the
-external-harness requirements were withdrawn with the harness, and
-`REQ-SEC-001/002` are verified. Closing the rest adds `tests/test_config.py`,
-`tests/test_security.py`, and `tests/test_setup.py`; those files are named as
-the target extension in [TEST_PLAN.md § 2](TEST_PLAN.md#2-framework-and-layout).
+### Real bugs found by the tests (2026-09-28)
+
+Each is pinned by a strict `xfail` test that fails on current code and passes
+when the defect is fixed. No production code was changed.
+
+| Bug | Requirement | Evidence | Fix owner |
+| --- | --- | --- | --- |
+| BUG-1 Sandbox prefix and symlink escape | REQ-TOOL-004 | `sandbox.py:58` uses `startswith`; `tools.md:41-44` already names this defect and requires `realpath` | tooling/security |
+| BUG-2 `tools.timeout_s` ignored | REQ-TOOL-003, REQ-CFG-003 | `tools/module.py:29` reads `command_timeout`; `schemas.md:238` documents `timeout_s` | tooling |
+| BUG-3 Overdue recurring task never advances | REQ-SCHED-003 | `scheduler/module.py:101` re-arms to `fire_time + interval`, still past; re-fires per tick | python |
+| BUG-4 `conversation.busy: queue` unimplemented | REQ-CONV-002 | `agent/module.py:273-277` always cancels regardless of `busy_policy` | python |
+| BUG-5 `voice.backend: halasr` silently stubbed | REQ-VOICE-004 | `voice/module.py:439-453` has no `halasr` branch; `HalASRBackend` lacks `transcribe`; `--audio` sets this value (`main.py:437`) | firmware/voice |
+| BUG-6 Embeddings unavailable latch never resets | REQ-MEM-006 | `embeddings.py:66-68` sets `_embeddings_unavailable`; `set_llm` does not clear it | python |
+| BUG-7 `agents:` map ignored | REQ-CFG-006 | `agent/module.py:30` reads singular `agent`; `schemas.md:200-223` documents `agents:` | python |
+
+### Remaining unverified
+
+The 20 unverified requirements cluster in: **first-run/setup** (3),
+**platform** (3), **structure** (3), and deferred or inspection-only behavior
+in wake/orb/conversation (`REQ-WAKE-001/004/007/008`, `REQ-CONV-001/005`,
+`REQ-ORB-003/004`, `REQ-HARNESS-001/008`, `REQ-MEM-003/004/005`,
+`REQ-CFG-001/005`, `REQ-ERR-002/003`). Most require `mac`/`linux`/`rig` or an
+inspection step and cannot be proven on the host; `REQ-CONV-001` and
+`REQ-MEM-003/004/005` are host-testable and remain the highest-value next cases.

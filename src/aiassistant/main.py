@@ -49,6 +49,7 @@ import signal
 import sys
 from typing import Any
 
+from aiassistant import terminal
 from aiassistant.bus import topics
 from aiassistant.bus.bus import MessageBus
 from aiassistant.bus.remote import RemoteBus
@@ -80,6 +81,30 @@ class ColoredFormatter(logging.Formatter):
         record.levelname = f"{color}{record.levelname}{RESET}"
         record.msg = f"{color}{record.msg}{RESET}"
         return super().format(record)
+
+
+class PromptAwareHandler(logging.StreamHandler):
+    """Log handler that keeps an interactive prompt intact.
+
+    A WARNING can arrive while the user is at an empty prompt. Writing straight
+    to the stream appends to the prompt line and destroys it. When a prompt
+    owner is registered, the record goes through ``terminal.write_above`` so the
+    console erases the prompt, prints the record on its own line, and redraws
+    the prompt.
+
+    With no prompt owner (a pipe, a log file, a non-interactive run) it defers
+    to the plain ``StreamHandler``, so the record still goes to this handler's
+    own stream — stderr by default — exactly as before.
+    """
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if not terminal.has_prompt_writer():
+                super().emit(record)
+                return
+            terminal.write_above(self.format(record) + self.terminator)
+        except Exception:
+            self.handleError(record)
 
 
 logger = logging.getLogger("main")
@@ -413,7 +438,7 @@ async def main():
         print(__doc__)
         return 0
 
-    handler = logging.StreamHandler()
+    handler = PromptAwareHandler()
     handler.setFormatter(ColoredFormatter(
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     ))

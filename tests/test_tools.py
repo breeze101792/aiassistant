@@ -75,6 +75,70 @@ class TestSandbox:
         assert not sb._is_safe_path('/etc/passwd')
 
 
+class TestSandboxRealPathContainment:
+    """REQ-TOOL-004 / T-0704: path policy uses real-path containment.
+
+    tools.md:41-44 names ``sandbox.py:58``'s ``startswith`` as the defect and
+    requires ``realpath`` plus a separator boundary. These pin the two escapes
+    a prefix match leaves open. The escape tests fail on the current code, so
+    they carry a strict ``xfail`` and go green when the fix lands.
+    """
+
+    def test_inside_path_is_allowed(self):
+        sb = Sandbox(safe_paths=['/tmp/aiassistant'])
+        assert sb._is_safe_path('/tmp/aiassistant/work/file.txt')
+
+    @pytest.mark.xfail(strict=True,
+                       reason="BUG-1: startswith lets /tmp/aiassistant-evil pass as inside /tmp/aiassistant")
+    def test_prefix_sibling_directory_is_refused(self):
+        sb = Sandbox(safe_paths=['/tmp/aiassistant'])
+        assert not sb._is_safe_path('/tmp/aiassistant-evil/x')
+
+    @pytest.mark.xfail(strict=True,
+                       reason="BUG-1: startswith lets ./workspace-evil pass as inside ./workspace")
+    def test_relative_prefix_sibling_is_refused(self):
+        sb = Sandbox(safe_paths=['./workspace'])
+        assert not sb._is_safe_path('./workspace-evil/x')
+
+    @pytest.mark.xfail(strict=True,
+                       reason="BUG-1: a symlink inside a safe root that points outside is not resolved")
+    def test_symlink_escape_is_refused(self, tmp_path):
+        safe = tmp_path / 'safe'
+        safe.mkdir()
+        outside = tmp_path / 'outside.txt'
+        outside.write_text('secret')
+        link = safe / 'link.txt'
+        link.symlink_to(outside)
+
+        sb = Sandbox(safe_paths=[str(safe)])
+        assert not sb._is_safe_path(str(link))
+
+
+class TestToolExecutionTimeout:
+    """REQ-TOOL-003 / T-0703: execution is bounded by ``tools.timeout_s``.
+
+    schemas.md:238 documents ``tools.timeout_s``; the module reads
+    ``command_timeout`` instead, so a user setting the documented key silently
+    gets the 30 s default. The xfail test pins the documented key.
+    """
+
+    def test_command_timeout_is_read(self):
+        from aiassistant.tools.module import ToolsModule
+        from aiassistant.bus.bus import MessageBus
+
+        mod = ToolsModule(MessageBus(), {"tools": {"command_timeout": 0.5}})
+        assert mod.command_timeout == 0.5
+
+    @pytest.mark.xfail(strict=True,
+                       reason="BUG-2: schemas.md documents tools.timeout_s but ToolsModule reads tools.command_timeout")
+    def test_documented_timeout_key_is_read(self):
+        from aiassistant.tools.module import ToolsModule
+        from aiassistant.bus.bus import MessageBus
+
+        mod = ToolsModule(MessageBus(), {"tools": {"timeout_s": 0.5}})
+        assert mod.command_timeout == 0.5
+
+
 class TestWebSearch:
     def test_has_interface(self):
         tool = WebSearchTool()

@@ -86,6 +86,97 @@ class TestTurnLifecycle:
 
         asyncio.run(scenario())
 
+    @pytest.mark.xfail(strict=True,
+                       reason="BUG-4: conversation.busy: queue is documented "
+                              "(schemas.md:246, REQ-CONV-002) but _start_turn "
+                              "always cancels; it never queues")
+    def test_queue_policy_does_not_cancel_the_first_turn(self):
+        """REQ-CONV-002: with ``busy: queue`` the first turn must survive."""
+        from aiassistant.agent.harness.fake import FakeHarness
+        from aiassistant.agent.perceive import PerceivedInput
+
+        bus = MessageBus()
+        mod = AgentModule(bus, {
+            "agent": {
+                "llm": {"provider": "ollama", "model": "test"},
+                "memory": {"conversations_path": "/tmp/aiassistant_test/memory_q"},
+            },
+            "conversation": {"busy": "queue"},
+        })
+        mod.harness = FakeHarness(stall=True)
+
+        async def scenario():
+            mod._turn_task = asyncio.ensure_future(asyncio.sleep(10))
+            first = mod._turn_task
+            mod._start_turn(
+                PerceivedInput(input_type="text",
+                               raw_payload={"text": "second", "channel": "console"}),
+                "user.input.text",
+            )
+            await asyncio.sleep(0.05)
+            queued = not first.cancelled() and not first.done()
+            if mod._turn_task is not first and not mod._turn_task.done():
+                mod._turn_task.cancel()
+            first.cancel()
+            try:
+                await first
+            except asyncio.CancelledError:
+                pass
+            return queued
+
+        assert asyncio.run(scenario()) is True
+
+
+class TestTerminalTurnFallback:
+    """REQ-CONV-006: a harness that ends without a terminal event must not
+    leave the turn dangling — the agent publishes a visible error instead."""
+
+    def test_harness_without_a_terminal_event_ends_in_an_error(self):
+        from aiassistant.agent.harness.base import (
+            AgentHarness, EventKind, HarnessCaps, HarnessHealth, TurnEvent,
+        )
+        from aiassistant.agent.perceive import PerceivedInput
+
+        class NoTerminal(AgentHarness):
+            name = "no-terminal"
+
+            @property
+            def caps(self):
+                return HarnessCaps()
+
+            async def health(self):
+                return HarnessHealth(ok=True)
+
+            async def cancel(self):
+                pass
+
+            async def run_turn(self, req):
+                yield TurnEvent(kind=EventKind.TEXT_DELTA, text="partial")
+
+        bus = MessageBus()
+        mod = AgentModule(bus, {
+            "agent": {
+                "llm": {"provider": "ollama", "model": "test"},
+                "memory": {"conversations_path": "/tmp/aiassistant_test/memory_nt"},
+            },
+        })
+        errors, finals = [], []
+        bus.subscribe(topics.AGENT_TURN_ERROR, lambda t, p: errors.append(p))
+        bus.subscribe(topics.AGENT_FINAL, lambda t, p: finals.append(p))
+
+        async def scenario():
+            mod.harness = NoTerminal()
+            await mod._thinking_loop(
+                PerceivedInput(input_type="text",
+                               raw_payload={"text": "hi", "channel": "console"}),
+                topics.USER_INPUT_TEXT,
+            )
+
+        asyncio.run(scenario())
+        assert len(errors) == 1, "a missing terminal event must surface as an error"
+        assert errors[0]["class"] == "harness"
+        assert finals == [], "no final response is fabricated for a broken turn"
+
 
 class TestInterrupt:
     def test_interrupt_is_subscribed(self, brain):

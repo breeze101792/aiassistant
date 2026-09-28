@@ -29,36 +29,54 @@ Rules:
 
 ## 2. Framework and layout
 
-`pytest` with `pytest-asyncio` (async tests carry `@pytest.mark.asyncio`, as in
-the current suite). No new test framework is introduced.
+`pytest` with `pytest-asyncio` (async tests carry `@pytest.mark.asyncio`). No new
+test framework is introduced. Configuration is in `pyproject.toml`:
+`testpaths = ["tests"]`, `asyncio_mode = "strict"`.
 
-Target file layout mirrors the new module names:
+### As-built layout (refined 2026-09-28)
 
-| Target file | Module under test | Cases |
+The refactor kept the pre-refactor file granularity rather than the one-file-per-
+module target sketched earlier, and the `T-NNNN` identifiers live in the docs,
+not in the test source. The table below is the as-built mapping; the IDs are the
+doc's contract with the code, not strings in the code.
+
+| Test file | Module under test | Cases |
 | --- | --- | --- |
-| `tests/conftest.py` | — shared fixtures | — |
+| `tests/conftest.py` | shared fixtures (`message_bus`, `temp_dir`, `mock_llm`) | — |
 | `tests/test_bus.py` | `bus/` pub/sub, RPC, registry | T-0501..T-0504 |
-| `tests/test_topics.py` | `bus/topics.py` constants, frozen values | T-0507 |
-| `tests/test_remote_bus.py` | `bus/remote.py` WS server | T-0505..T-0510 |
-| `tests/test_agent_loop.py` | `agent/` loop, gate, interrupt, persist | T-0301, T-0303, T-0401, T-0402, T-0906 |
-| `tests/test_harness_contract.py` | `agent/harness` interface (parametrized) | T-0301, T-0302, T-0307 |
-| `tests/test_harness_native.py` | `agent/harness/native` loop against a fake provider | T-0301, T-0303, T-0304 |
-| `tests/test_reasoning.py` | `reasoning/` providers, streaming, embeddings | T-0601..T-0606 |
-| `tests/test_tools.py` | `tools/` registry, sandbox, skills | T-0701..T-0705 |
-| `tests/test_voice.py` | `voice/` backends, state machine, wake, device | T-0101, T-0104..T-0107 |
-| `tests/test_voice_queue.py` | `voice/` segment and PCM queues | T-0102 |
-| `tests/test_voice_chunker.py` | `voice/` TTS chunker (pure) | T-0103 |
-| `tests/test_orb_bridge.py` | `orb/` view model against a fake bridge | T-0201..T-0206 |
-| `tests/test_console.py` | `console/` commands and rendering | T-0901..T-0906 |
+| `tests/test_topics.py` | `bus/topics.py` constants, channel routing | T-0507 |
+| `tests/test_remote_bus.py` | `bus/remote.py` WS server, auth | T-0505, T-0508..T-0511 |
+| `tests/test_bridge.py` | `bridge.py` client against a real server | T-0505, T-0506 |
+| `tests/test_agent_control.py` | turn lifecycle, interrupt, speech routing, terminal fallback | T-0906, T-0401, T-0403, T-0404 |
+| `tests/test_agent.py` | `agent/` compress, retry, JSON repair, responder, strip-thinking | T-0601..T-0604, T-0402 |
+| `tests/test_harness_contract.py` | `agent/harness` interface (parametrized) | T-0301, T-0307 |
+| `tests/test_harness_native.py` | `agent/harness/native` against a fake provider | T-0301, T-0302, T-0304 |
+| `tests/test_reasoning.py` | `reasoning/` provider construction | T-0603 |
+| `tests/test_reasoning_stream.py` | `reasoning/` streaming, factory, loop-yield | T-0601, T-0605 |
+| `tests/test_tools.py` | `tools/` tools, sandbox, skills, timeout key | T-0701..T-0705 |
+| `tests/test_voice.py` | `voice/` FSM, chunker, queue, wake, backend selection | T-0103..T-0105, T-0107, T-0109 |
+| `tests/test_voice_asr.py` | `voice/asr/` backends (stub/whisper/funasr/HalASR) | T-0106, optional-dep guarded |
+| `tests/test_orb.py` | `orb/model.py` view model, theme, feed dispatch | T-0202, T-0203, T-0205, T-0206 |
+| `tests/test_console.py` | `console/` commands, streaming, terminal ownership, /help | T-0902..T-0905, T-0907, T-0908 |
+| `tests/test_display.py` | frontend resolution, gui/tui availability | T-1201..T-1204, T-1208, T-1210 |
+| `tests/test_frontend_plan.py` | `main.py` frontend plan and supervision, harness seam | T-0207, T-1204, T-1211 |
+| `tests/test_tui.py` | `tui/` key dispatch, watch set, help overlay | T-1206, T-1207, T-1209 |
 | `tests/test_scheduler.py` | `scheduler/` storage and clock loop | T-1001..T-1005 |
-| `tests/test_memory.py` | `agent/memory`, `agent/transcript` | REQ-MEM-* (uncovered, see trace) |
+| `tests/test_memory.py` | `agent/memory`, `embeddings`, `persona`, `toolcache` | T-0402, T-0607, T-0608 |
 | `tests/test_vision.py` | `vision/` (frozen) | T-1101 |
-| `tests/test_messaging.py` | `messaging/` (frozen) | T-1102 |
-| `tests/test_integration.py` | composition root, full flows | flows |
+| `tests/test_integration.py` | composition root, full flows (fake provider) | flows |
 
-The layout list above is not exhaustive: if a gap in [trace.md](trace.md) is
-closed later (config, security, setup), the new cases land in
-`tests/test_config.py`, `tests/test_security.py`, `tests/test_setup.py`.
+There is no `tests/test_messaging.py`, `test_security.py`, or `test_setup.py`
+yet; messaging and the security cases are still host-testable in principle and
+are listed as `unverified` in [trace.md](trace.md) rather than omitted.
+
+### Known environment gaps
+
+- `tests/test_voice_asr.py` imports numpy, which needs `libstdc++.so.6` and
+  `libz.so.1` on `LD_LIBRARY_PATH` in this NixOS venv. Without them the whole
+  file errors at collection. This is a venv/packaging issue, not a test defect.
+- 5 tests fail and 5 skip for environment reasons only (no Ollama,
+  `pkg_resources` absent for `webrtcvad`). They are unrelated to code changes.
 
 ## 3. Migration — old tests to new
 

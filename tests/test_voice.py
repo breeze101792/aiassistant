@@ -198,6 +198,48 @@ class TestWakeDetection:
         assert isinstance(create_detector("wake", ["hi"]), AsrHotwordDetector)
 
 
+class TestAsrBackendSelection:
+    """REQ-VOICE-004: ``voice.backend`` selects the backend, no code change.
+
+    ``--audio`` sets ``voice.backend: halasr`` (main.py:437), so an unknown or
+    miswired value silently degrades speech input to the stub.
+    """
+
+    def test_stub_selects_the_stub(self):
+        from aiassistant.voice.module import VoiceModule
+        from aiassistant.voice.asr.asr_backends.stub import StubASR
+        m = VoiceModule(MessageBus(), {"voice": {"backend": "stub"}})
+        assert isinstance(m._build_asr(), StubASR)
+
+    def test_whisper_selects_whisper(self):
+        from aiassistant.voice.module import VoiceModule
+        from aiassistant.voice.asr.asr_backends.whisper import WhisperBackend
+        m = VoiceModule(MessageBus(), {"voice": {"backend": "whisper"}})
+        assert isinstance(m._build_asr(), WhisperBackend)
+
+    def test_funasr_selects_funasr(self):
+        from aiassistant.voice.module import VoiceModule
+        from aiassistant.voice.asr.asr_backends.funasr import FunASRBackend
+        m = VoiceModule(MessageBus(), {"voice": {"backend": "funasr"}})
+        assert isinstance(m._build_asr(), FunASRBackend)
+
+    def test_unknown_backend_falls_back_to_stub(self):
+        from aiassistant.voice.module import VoiceModule
+        from aiassistant.voice.asr.asr_backends.stub import StubASR
+        m = VoiceModule(MessageBus(), {"voice": {"backend": "nonsense"}})
+        assert isinstance(m._build_asr(), StubASR)
+
+    @pytest.mark.xfail(strict=True,
+                       reason="BUG-5: --audio sets voice.backend: halasr, but "
+                              "_build_asr does not recognise 'halasr' and the "
+                              "backend has no transcribe(), so speech silently "
+                              "degrades to the stub")
+    def test_halasr_selects_the_hal_backend(self):
+        from aiassistant.voice.module import VoiceModule
+        m = VoiceModule(MessageBus(), {"voice": {"backend": "halasr"}})
+        assert type(m._build_asr()).__name__ == "HalASRBackend"
+
+
 class TestPlaybackControl:
     """Interrupt must silence output, and the module must publish state."""
 

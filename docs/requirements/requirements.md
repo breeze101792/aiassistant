@@ -102,6 +102,10 @@ on-target audio rig (loopback or fixture) · `inspection`.
 | REQ-CONSOLE-005 | Streaming in console. | Assistant text renders incrementally from deltas. | [A] | host |
 | REQ-CONSOLE-006 | Headless autodetect. | `display.mode: auto` starts no visual shell on a machine with no display server, and the GUI orb when one is present. `AIASSISTANT_DISPLAY_OFF` forces `none` unless the CLI names a frontend. | [A] | host, mac, linux |
 | REQ-CONSOLE-007 | Help names the wake phrase. | `/help` (and the TUI help overlay) prints the configured `voice.hotwords`, never a hard-coded phrase; with none configured it says input is not gated. | [A] | host |
+| REQ-CONSOLE-008 | Async output never corrupts the prompt. | A banner, transcript line, or log record arriving while the prompt is shown is written above it and the prompt is redrawn; exactly one prompt remains, and it is never glued to the text. Log records keep going to stderr. | [A] | host |
+| REQ-CONSOLE-009 | A streamed answer is printed once. | Deltas open one `Assistant:` line and append in place. `agent.final` settles it without reprinting when the text matches, and erases every wrapped row before rewriting when the model revised. The answer is never displayed twice, including when it wraps. | [A] | host |
+| REQ-CONSOLE-010 | Reasoning is not transcript. | Thinking deltas and the reasoning summary never enter the transcript; they go to the debug log, and the summary is also shown only when `/thinking` is on. | [A] | host |
+| REQ-CONSOLE-011 | Input is echoed exactly once. | On a tty the terminal echoes the typed line, so the console does not print it again; a piped or redirected run, which has no terminal echo, keeps the turn in the transcript. A voice transcript is always shown. | [A] | host |
 
 ## Frontends
 

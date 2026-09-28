@@ -203,3 +203,69 @@ class TestTuiAvailable:
         monkeypatch.setattr(config_mod.sys.stdin, "isatty", lambda: False, raising=False)
         tui_available()
         assert calls == []
+
+
+class TestTerminalPromptSeam:
+    """The prompt seam routes async writes above the active prompt."""
+
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        from aiassistant import terminal
+        terminal.set_prompt_writer(None)
+        yield
+        terminal.set_prompt_writer(None)
+
+    def test_no_writer_is_a_plain_stdout_write(self, capsys):
+        from aiassistant import terminal
+        terminal.write_above("plain")
+        assert capsys.readouterr().out == "plain"
+
+    def test_writer_receives_the_text(self):
+        from aiassistant import terminal
+        seen = []
+        terminal.set_prompt_writer(seen.append)
+        terminal.write_above("routed")
+        assert seen == ["routed"]
+        assert terminal.has_prompt_writer() is True
+
+    def test_clearing_the_writer_restores_plain_writes(self, capsys):
+        from aiassistant import terminal
+        terminal.set_prompt_writer(lambda t: None)
+        terminal.set_prompt_writer(None)
+        terminal.write_above("plain again")
+        assert capsys.readouterr().out == "plain again"
+        assert terminal.has_prompt_writer() is False
+
+
+class TestPromptAwareHandler:
+    """A log record routes through the seam so the prompt survives."""
+
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        from aiassistant import terminal
+        terminal.set_prompt_writer(None)
+        yield
+        terminal.set_prompt_writer(None)
+
+    def _record(self, msg):
+        import logging
+        return logging.LogRecord("t", logging.WARNING, __file__, 1, msg, None, None)
+
+    def test_format_is_written_above_the_prompt(self):
+        from aiassistant import terminal
+        from aiassistant.main import PromptAwareHandler
+        seen = []
+        terminal.set_prompt_writer(seen.append)
+        handler = PromptAwareHandler()
+        handler.emit(self._record("boom"))
+        assert any("boom" in s for s in seen)
+
+    def test_write_is_plain_without_a_prompt_owner(self, capsys):
+        from aiassistant.main import PromptAwareHandler
+        handler = PromptAwareHandler()
+        handler.emit(self._record("plain record"))
+        captured = capsys.readouterr()
+        # Defers to the plain StreamHandler, i.e. this handler's own stream
+        # (stderr by default) -- not stdout, where the prompt lives.
+        assert "plain record" in captured.err
+        assert "plain record" not in captured.out

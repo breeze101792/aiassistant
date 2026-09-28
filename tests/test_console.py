@@ -351,3 +351,379 @@ class TestHelpHotword:
     def test_blank_hotwords_are_ignored(self):
         cli = self._cli({"voice": {"hotwords": ["", "  "]}})
         assert "none configured" in cli._hotword_line()
+
+
+class TestPromptOwnership:
+    """Async output must not corrupt or swallow the interactive prompt.
+
+    The bug: the read loop printed `> ` and tracked it in a local variable,
+    while each handler appended `\\n{prompt}` itself. A WARNING or the ready
+    banner then glued itself to the prompt, and the next line had no prompt.
+    """
+
+    def _cli(self):
+        from aiassistant.bus.bus import MessageBus
+        return ConsoleModule(MessageBus(), {"console": {"prompt": "> "}})
+
+    @pytest.fixture(autouse=True)
+    def _reset_writer(self):
+        from aiassistant import terminal
+        yield
+        terminal.set_prompt_writer(None)
+
+    def test_emit_when_no_prompt_prints_plainly(self, capsys):
+        cli = self._cli()
+        cli._emit("hello")
+        assert capsys.readouterr().out == "hello\n"
+
+    def test_emit_erases_and_redraws_an_active_prompt(self, capsys):
+        cli = self._cli()
+        cli._show_prompt()
+        cli._emit("notice")
+        out = capsys.readouterr().out
+        # prompt, then erase-line + text, then a newline, then the prompt again.
+        assert out.startswith("> ")
+        assert "\r\x1b[Knotice" in out
+        assert out.endswith("> ")
+
+    def test_show_prompt_marks_it_on_screen(self):
+        cli = self._cli()
+        assert cli._prompt_shown is False
+        cli._show_prompt()
+        assert cli._prompt_shown is True
+
+    def test_clear_prompt_erases_only_once(self, capsys):
+        cli = self._cli()
+        cli._show_prompt()
+        cli._clear_prompt()
+        cli._clear_prompt()  # idempotent: no second erase
+        out = capsys.readouterr().out
+        assert out.count("\r\x1b[K") == 1
+        assert cli._prompt_shown is False
+
+    def test_ready_banner_does_not_glue_to_the_prompt(self, capsys):
+        import asyncio
+        cli = self._cli()
+        cli._show_prompt()
+        asyncio.run(cli._handle_ready("status.assistant.ready", {}))
+        out = capsys.readouterr().out
+        assert "> Ready" not in out, "the banner must not be glued to the prompt"
+        assert "\r\x1b[KReady. Type /help for commands." in out
+
+    def test_final_redraws_exactly_one_prompt(self, capsys):
+        import asyncio
+        cli = self._cli()
+        cli._show_prompt()
+        asyncio.run(cli._handle_final("agent.final", {"text": "Hi"}))
+        out = capsys.readouterr().out
+        # One prompt at the start, one redraw at the end -- not zero, not three.
+        assert out.count("> ") == 2
+        assert out.endswith("> ")
+
+    def test_console_registers_and_clears_the_writer(self):
+        import asyncio
+        from aiassistant import terminal
+        cli = self._cli()
+
+        async def scenario():
+            await cli.start()
+            assert terminal.has_prompt_writer() is True
+            await cli.stop()
+
+        asyncio.run(scenario())
+        assert terminal.has_prompt_writer() is False
+
+    def test_suspend_releases_the_prompt_line(self):
+        import asyncio
+        from aiassistant import terminal
+
+        async def scenario():
+            cli = self._cli()
+            await cli.start()
+            cli.suspend_terminal()
+            assert terminal.has_prompt_writer() is False
+            await cli.stop()
+
+        asyncio.run(scenario())
+
+    def test_emit_is_silent_when_another_frontend_owns_the_terminal(self, capsys):
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()  # discard the prompt drawn while it owned the tty
+        cli._owns_terminal = False
+        cli._emit("must not appear")
+        assert capsys.readouterr().out == ""
+
+
+class TestStreamingDoesNotDuplicate:
+    """The streamed line is settled in place, not printed a second time.
+
+    The bug: the first delta redrew the prompt (so later deltas landed after
+    `> `), and `agent.final` then wrote the whole text again on a new line.
+    """
+
+    def _cli(self):
+        from aiassistant.bus.bus import MessageBus
+        return ConsoleModule(MessageBus(), {"console": {"prompt": "> "}})
+
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        from aiassistant import terminal
+        yield
+        terminal.set_prompt_writer(None)
+
+    def test_deltas_open_one_line_and_append_in_place(self, capsys):
+        import asyncio
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()
+
+        async def scenario():
+            await cli._handle_delta("agent.delta", {"kind": "text", "text": "I don"})
+            await cli._handle_delta("agent.delta", {"kind": "text", "text": "'t know"})
+
+        asyncio.run(scenario())
+        out = capsys.readouterr().out
+        assert out.count("Assistant: ") == 1, "the prefix must be printed once"
+        assert "I don" in out and "'t know" in out
+        assert "> " not in out, "the prompt must not reappear mid-stream"
+
+    def test_final_settles_without_duplicating_a_plain_line(self, capsys):
+        import asyncio
+        from tests.screen import render
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()
+
+        async def scenario():
+            await cli._handle_delta("agent.delta", {"kind": "text", "text": "Hi"})
+            await cli._handle_final("agent.final", {"text": "Hi there"})
+
+        asyncio.run(scenario())
+        shown = render(capsys.readouterr().out)
+        assert shown == ["Assistant: Hi there", ">"], shown
+
+    def test_identical_final_never_reprints_the_stream(self, capsys):
+        """The wrap bug: a reprint duplicates any line that wrapped."""
+        import asyncio
+        from tests.screen import render
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()
+
+        async def scenario():
+            for chunk in ("A long ", "streamed ", "answer"):
+                await cli._handle_delta("agent.delta", {"kind": "text", "text": chunk})
+            await cli._handle_final("agent.final", {"text": "A long streamed answer"})
+
+        asyncio.run(scenario())
+        shown = render(capsys.readouterr().out)
+        assert shown == ["Assistant: A long streamed answer", ">"], shown
+
+    def test_a_wrapped_answer_appears_exactly_once(self, capsys):
+        """The reported bug, at the display level.
+
+        `\\r` plus `\\x1b[K` clears one physical row, so reprinting a wrapped
+        answer left the earlier rows and showed the whole thing twice.
+        """
+        import asyncio
+        from tests.screen import render
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()
+        answer = ("I'm an AI assistant here to help you with tasks like answering "
+                  "questions, researching topics, and browsing the web.")
+
+        async def scenario():
+            for i in range(0, len(answer), 12):
+                await cli._handle_delta(
+                    "agent.delta", {"kind": "text", "text": answer[i:i + 12]})
+            await cli._handle_final("agent.final", {"text": answer})
+
+        asyncio.run(scenario())
+        shown = " ".join(render(capsys.readouterr().out, columns=80))
+        assert shown.count("Assistant:") == 1, shown
+        assert shown.count("browsing the web.") == 1, shown
+
+    def test_revision_erases_every_streamed_row(self, capsys):
+        import asyncio
+        from tests.screen import render
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()
+
+        async def scenario():
+            for chunk in ("a draft that ", "runs on and on"):
+                await cli._handle_delta("agent.delta", {"kind": "text", "text": chunk})
+            await cli._handle_final("agent.final", {"text": "final"})
+
+        asyncio.run(scenario())
+        shown = render(capsys.readouterr().out)
+        assert shown == ["Assistant: final", ">"], shown
+
+    def test_final_without_deltas_prints_one_labelled_line(self, capsys):
+        import asyncio
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()
+        asyncio.run(cli._handle_final("agent.final", {"text": "Just once"}))
+        out = capsys.readouterr().out
+        assert out.count("Assistant: Just once") == 1
+
+    def test_thinking_goes_to_the_log_not_the_transcript(self, capsys, caplog):
+        import asyncio
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()
+        with caplog.at_level("DEBUG"):
+            asyncio.run(cli._handle_delta(
+                "agent.delta", {"kind": "thinking", "text": "let me consider"}))
+        assert "let me consider" not in capsys.readouterr().out
+        assert any("let me consider" in r.message for r in caplog.records)
+
+    def test_thinking_summary_is_logged_and_hidden_by_default(self, capsys, caplog):
+        import asyncio
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()
+        with caplog.at_level("DEBUG"):
+            asyncio.run(cli._handle_final(
+                "agent.final", {"text": "answer", "thinking": "reasoning here"}))
+        out = capsys.readouterr().out
+        assert "reasoning here" not in out
+        assert any("reasoning here" in r.message for r in caplog.records)
+
+    def test_thinking_summary_shows_only_when_requested(self, capsys):
+        import asyncio
+        cli = self._cli()
+        cli._show_thinking = True
+        cli._show_prompt()
+        capsys.readouterr()
+        asyncio.run(cli._handle_final(
+            "agent.final", {"text": "answer", "thinking": "reasoning here"}))
+        assert "reasoning here" in capsys.readouterr().out
+
+
+class TestInputEcho:
+    """Typed input is echoed exactly once.
+
+    The terminal echoes a line typed at the prompt, so the console must not
+    also print it as "You: ..." or the user reads their own input twice. A
+    piped run has no terminal echo, so the transcript keeps the turn there.
+    """
+
+    def _cli(self):
+        from aiassistant.bus.bus import MessageBus
+        return ConsoleModule(MessageBus(), {"console": {"prompt": "> "}})
+
+    @pytest.fixture(autouse=True)
+    def _reset(self):
+        from aiassistant import terminal
+        yield
+        terminal.set_prompt_writer(None)
+
+    def test_tty_does_not_re_echo_the_typed_line(self, monkeypatch, capsys):
+        import asyncio
+        import sys
+        cli = self._cli()
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False)
+        asyncio.run(cli._handle_line("hi"))
+        assert "You: hi" not in capsys.readouterr().out
+
+    def test_non_tty_echoes_the_line_into_the_transcript(self, monkeypatch, capsys):
+        import asyncio
+        import sys
+        cli = self._cli()
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: False, raising=False)
+        asyncio.run(cli._handle_line("hi"))
+        assert "You: hi" in capsys.readouterr().out
+
+    def test_the_turn_is_published_whichever_way(self, monkeypatch):
+        import asyncio
+        import sys
+        seen = []
+        cli = self._cli()
+        cli.bus.subscribe("user.input.text", lambda t, p: seen.append(p))
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True, raising=False)
+        asyncio.run(cli._handle_line("hi"))
+        assert len(seen) == 1
+
+    def test_voice_transcript_is_still_shown(self, capsys):
+        """Voice has no terminal echo, so its transcript must remain."""
+        import asyncio
+        cli = self._cli()
+        cli._show_prompt()
+        capsys.readouterr()
+        asyncio.run(cli._handle_transcribed("voice.transcribed", {"text": "spoken words"}))
+        assert "You: spoken words" in capsys.readouterr().out
+
+
+class TestWrapMath:
+    """Row and width math behind the erasure.
+
+    The bug was that `\\r\\x1b[K` clears one physical row. A wrapped answer kept
+    its earlier rows, so settling the text appeared to duplicate it.
+    """
+
+    def _cli(self, columns=80):
+        import unittest.mock as mock
+        from aiassistant.bus.bus import MessageBus
+        cli = ConsoleModule(MessageBus(), {})
+        cli._terminal_columns = mock.Mock(return_value=columns)
+        return cli
+
+    def test_exact_multiple_does_not_add_a_row(self):
+        # 80 chars in an 80-column terminal is one full row, not two.
+        assert self._cli(80)._wrapped_rows("x" * 80) == 1
+
+    def test_one_past_the_edge_wraps(self):
+        assert self._cli(80)._wrapped_rows("x" * 81) == 2
+
+    def test_zero_width_is_one_row(self):
+        assert self._cli(80)._wrapped_rows("") == 1
+
+    def test_display_width_counts_cjk_as_two_columns(self):
+        from aiassistant.console.module import _display_width
+        assert _display_width("日本語") == 6
+        assert _display_width("abc") == 3
+
+    def test_display_width_ignores_combining_marks(self):
+        from aiassistant.console.module import _display_width
+        assert _display_width("e\u0301") == 1
+
+    def test_wrapped_rows_uses_display_width_not_char_count(self):
+        # 40 CJK chars = 80 columns = exactly one row in an 80-column terminal.
+        assert self._cli(80)._wrapped_rows("日" * 40) == 1
+        assert self._cli(80)._wrapped_rows("日" * 41) == 2
+
+    def test_erasure_moves_up_for_a_multiline_block(self, capsys):
+        cli = self._cli(20)
+        cli._owns_terminal = True
+        cli._stream_prefix = "Assistant:"      # 10 chars
+        cli._streamed_text = "x" * 30          # 40 chars -> 2 rows at 20 cols
+        capsys.readouterr()
+        cli._erase_streamed_rows()
+        out = capsys.readouterr().out
+        assert "\x1b[1A" in out, "cursor must move up one row for a 2-row block"
+        assert out.count("\x1b[2K") == 2, "every row must be cleared"
+
+    def test_erasure_of_a_three_row_block_moves_up_twice(self, capsys):
+        cli = self._cli(20)
+        cli._owns_terminal = True
+        cli._stream_prefix = "Assistant:"
+        cli._streamed_text = "x" * 50          # 60 chars -> 3 rows at 20 cols
+        capsys.readouterr()
+        cli._erase_streamed_rows()
+        out = capsys.readouterr().out
+        assert "\x1b[2A" in out
+        assert out.count("\x1b[2K") == 3
+
+    def test_erasure_of_a_single_row_does_not_move_up(self, capsys):
+        cli = self._cli(80)
+        cli._owns_terminal = True
+        cli._stream_prefix = "Assistant:"
+        cli._streamed_text = "short"
+        capsys.readouterr()
+        cli._erase_streamed_rows()
+        out = capsys.readouterr().out
+        assert "\x1b[1A" not in out and "\x1b[2A" not in out
