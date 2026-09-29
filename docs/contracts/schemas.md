@@ -178,6 +178,8 @@ Published ≤ 20 Hz, latest-wins. The publisher coalesces; the bridge does not
 | `voice.overflow` | `{}` | new |
 | `command.voice.mute` | `{muted: bool}` | new |
 | `command.agent.interrupt` | `{}` | new |
+| `command.assistant.shutdown` | `{}` | new |
+| `command.frontend.open` | `{kind: "tui" \| "gui"}` | new |
 
 ---
 

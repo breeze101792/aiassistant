@@ -83,6 +83,10 @@ class ConsoleModule(BaseModule):
         # every async writer redraws it through `_emit`, so the console is the
         # single owner of the prompt line.
         self._prompt_shown = False
+        # Whether this process has a frontend child running, and which kind, so
+        # /tui and /gui do not double-spawn. main.py reports the transitions.
+        self._frontend_open = False
+        self._frontend_kind = ""
 
     async def setup(self) -> bool:
         logger.info("Console setup complete")
@@ -143,6 +147,16 @@ class ConsoleModule(BaseModule):
         self._start_reader()
         logger.info("Console terminal I/O resumed")
         self._show_prompt()
+
+    def frontend_started(self, kind: str) -> None:
+        """Record that main.py spawned a frontend child for this console."""
+        self._frontend_open = True
+        self._frontend_kind = kind
+
+    def frontend_stopped(self) -> None:
+        """Record that the frontend child exited, so /tui and /gui work again."""
+        self._frontend_open = False
+        self._frontend_kind = ""
 
     def _render(self, text: str) -> None:
         """Write to the terminal unless another frontend owns it."""
@@ -323,6 +337,12 @@ class ConsoleModule(BaseModule):
         if line == "/clear":
             print("\033[2J\033[H", end="")
             return True
+        if line == "/tui":
+            self._open_frontend("tui")
+            return True
+        if line == "/gui":
+            self._open_frontend("gui")
+            return True
         if line.startswith("/"):
             print(f"Unknown command: {line}")
             self._print_help()
@@ -487,7 +507,21 @@ class ConsoleModule(BaseModule):
         logging.root.setLevel(level)
         print(f"Log level: {arg.lower()}")
 
-    _commands = ["/exit", "/help", "/status", "/log", "/thinking", "/clear"]
+    def _open_frontend(self, kind: str) -> None:
+        """Ask main.py to spawn a frontend, unless one is already open.
+
+        The parent owns spawning (it holds the tty and the child), so the
+        console only publishes the request; ``frontend_started`` is what tells it
+        a child exists.
+        """
+        if self._frontend_open:
+            print(f"A {self._frontend_kind or kind} frontend is already open.")
+            return
+        self.bus.publish(topics.COMMAND_FRONTEND_OPEN, {"kind": kind})
+        print(f"Opening the {kind} frontend...")
+
+    _commands = ["/exit", "/help", "/status", "/log", "/thinking", "/clear",
+                 "/tui", "/gui"]
     _log_levels = ["debug", "info", "warning", "error", "off"]
 
     def _complete(self, text: str, state: int) -> str | None:
@@ -510,6 +544,8 @@ class ConsoleModule(BaseModule):
         print("  /status    Show module status")
         print("  /log [debug|info|warning|error|off]  Show or set log level")
         print("  /clear     Clear the terminal")
+        print("  /tui       Open the terminal orb")
+        print("  /gui       Open the graphical orb")
         print()
         print(self._hotword_line())
         print()

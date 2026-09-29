@@ -158,6 +158,8 @@ rows could not render. It is display-only.
 | `user.input.text` | `{text, channel:"orb"}` | Per submission |
 | `command.agent.interrupt` | `{}` | Per user interrupt |
 | `command.voice.mute` | `{muted: bool}` | Per toggle |
+| `command.assistant.shutdown` | `{}` | Per `/exit` from a frontend |
+| `command.frontend.open` | `{kind: "tui" \| "gui"}` | Per `/tui` or `/gui` |
 
 All payloads are defined in [schemas.md](schemas.md). Both `voice.level` and
 `agent.delta` are coalesced **at the publisher**, not in the bridge
@@ -287,6 +289,8 @@ as-built strings for now. Every other listed rename adopts its new value.
 | `AGENT_TURN_ERROR` | `agent.turn.error` | `agent` |
 | `AGENT_TRANSCRIPT_SNAPSHOT` | `agent.transcript.snapshot` | `agent` — **resync on reconnect**; the orb requests it when it detects an `agent.delta` index gap |
 | `COMMAND_AGENT_INTERRUPT` | `command.agent.interrupt` | orb, console, hotkey |
+| `COMMAND_ASSISTANT_SHUTDOWN` | `command.assistant.shutdown` | tui, console |
+| `COMMAND_FRONTEND_OPEN` | `command.frontend.open` | console (received by `main`) |
 | `COMMAND_VOICE_MUTE` | `command.voice.mute` | orb |
 | `COMMAND_VOICE_PTT_START` | `command.voice.ptt.start` | orb, hotkey |
 | `COMMAND_VOICE_PTT_END` | `command.voice.ptt.end` | orb, hotkey |
@@ -301,7 +305,7 @@ as-built strings for now. Every other listed rename adopts its new value.
 | Agent RPC | `AGENT_ASK`=`agent.ask` (renamed from `brain.ask`) |
 | Tools | `TOOL_EXECUTE`=`tool.execute`, `STATUS_TOOL_DONE`=`status.tool.done`, `STATUS_TOOL_ERROR`=`status.tool.error`, `STATUS_TOOLS_READY`=`status.tools.ready` |
 | Voice | `VOICE_STATE`=`voice.state`, `VOICE_LEVEL`=`voice.level`, `VOICE_TRANSCRIBED`=`voice.transcribed`, `VOICE_SPEAK`=`voice.speak`, `VOICE_TTS_STARTED`/`VOICE_TTS_DONE`/`VOICE_TTS_ERROR`/`VOICE_TTS_READY`=`voice.tts.*`, `VOICE_OVERFLOW`=`voice.overflow` |
-| Commands | `COMMAND_AGENT_INTERRUPT`=`command.agent.interrupt`, `COMMAND_VOICE_MUTE`=`command.voice.mute` (new) |
+| Commands | `COMMAND_AGENT_INTERRUPT`=`command.agent.interrupt`, `COMMAND_ASSISTANT_SHUTDOWN`=`command.assistant.shutdown` (new), `COMMAND_FRONTEND_OPEN`=`command.frontend.open` (new), `COMMAND_VOICE_MUTE`=`command.voice.mute` (new) |
 | Status | `status.assistant.ready` (`main.py:167`), `STATUS_HARNESS`=`status.harness` (new) |
 | Schedule | `schedule.triggered` (`scheduler.py:92`), `action.schedule.add/list/delete` (`scheduler.py:33-35`), `status.schedule.added/list/deleted` (`scheduler.py:65-74`), `status.scheduler.error` (`scheduler.py:54`) |
 | Module lifecycle | `bus.module.connected` (`remote.py:74`), `bus.module.disconnected` (`remote.py:101`, `main.py:160`) |

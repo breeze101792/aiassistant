@@ -156,7 +156,8 @@ Accessibility checklist for the handoff:
 1. Every state is readable with color and all attributes stripped.
 2. Every control is a key; `F1` lists them all.
 3. `Esc` always resolves; it never quits.
-4. `Ctrl+D` quits; `endwin()` runs on every exit path, including a crash.
+4. `Ctrl+D` closes the TUI only; `/exit` shuts the assistant down.
+   `endwin()` runs on every exit path, including a crash.
 5. The too-small view still tracks state, so resizing back restores the newest
    data.
 6. The streaming cursor and the focused element are `A_REVERSE`, the one

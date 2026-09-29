@@ -136,7 +136,7 @@ Resize the window, or press Ctrl+D to quit.
 | Minimum columns | `60` (`colGutter` 10 + `colBodyMin` 24 + time 8 + meter 20 + margins) |
 | Minimum rows | `16` (`6` fixed chrome + `10` transcript rows); below this the transcript cannot show a turn plus a response |
 | Message | Two lines, centered both ways, `attrPrimary` |
-| Controls that still work | `Ctrl+D` quits; `Ctrl+C` is handled by the app, not the TUI |
+| Controls that still work | `Ctrl+D` closes the TUI; `/exit` shuts the assistant down; `Ctrl+C` is handled by the app, not the TUI |
 | State | Still tracked: growing the terminal shows the current state, not the state at the small moment |
 
 This satisfies [frontends.md flow (m)](../../requirements/features/frontends.md#m-tui-cannot-start):
@@ -305,7 +305,8 @@ input, quit).
 | Any printable | Insert into the composer | — |
 | `Enter` | Send the composer text | Publish `user.input.text {text, channel: "tui"}` |
 | `/` at start | Local console command, not sent to the agent | local |
-| `Ctrl+D` | Quit the TUI process; the assistant keeps running | — |
+| `/exit` | Shut down the assistant, then close the TUI | Publish `command.assistant.shutdown {}` |
+| `Ctrl+D` | Close the TUI only; the assistant keeps running and the console resumes | — |
 | `Esc` | Context-dependent, same order as the GUI ([interactions.md § Escape](../interactions.md#escape-resolution-order)), minus mouse steps | interrupt / dismiss / clear |
 | `Ctrl+T` | Toggle mute | Publish `command.voice.mute {muted}` |
 | `Ctrl+.` | Stop / interrupt a turn | Publish `command.agent.interrupt {}` |

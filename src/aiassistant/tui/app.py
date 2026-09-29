@@ -434,6 +434,9 @@ class TuiApp:
             self._clear()
         elif command == "/help":
             self.ui.help_open = True
+        elif command == "/exit":
+            asyncio.ensure_future(self._publish(
+                topics.COMMAND_ASSISTANT_SHUTDOWN, {}))
         else:
             logger.info("unknown local command: %s", command)
 

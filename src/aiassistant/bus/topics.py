@@ -29,6 +29,8 @@ VOICE_OVERFLOW = "voice.overflow"
 
 # ── Commands ─────────────────────────────────────────────────
 COMMAND_AGENT_INTERRUPT = "command.agent.interrupt"
+COMMAND_ASSISTANT_SHUTDOWN = "command.assistant.shutdown"
+COMMAND_FRONTEND_OPEN = "command.frontend.open"
 COMMAND_VOICE_MUTE = "command.voice.mute"
 COMMAND_VOICE_PTT_START = "command.voice.ptt.start"
 COMMAND_VOICE_PTT_END = "command.voice.ptt.end"

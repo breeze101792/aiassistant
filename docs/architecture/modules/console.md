@@ -18,6 +18,8 @@ Reads stdin on an executor, never blocking the loop. Persists readline history.
 | Command | Action |
 | --- | --- |
 | `/exit` | Shut down |
+| `/tui` | Publish `command.frontend.open {kind:"tui"}`; the parent spawns the TUI |
+| `/gui` | Publish `command.frontend.open {kind:"gui"}`; the parent spawns the orb |
 | `/help` | Command help |
 | `/status` | Module registry and harness health |
 | `/mute` | Toggle microphone mute |

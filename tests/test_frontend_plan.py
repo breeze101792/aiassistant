@@ -111,6 +111,7 @@ class TestFrontendSupervision:
         runner._shutting_down = False
         runner._frontend = FRONTEND_TUI
         runner._frontend_restarts = 0
+        runner._frontend_generation = 0
         runner._frontend_process = None
         runner.modules = {}
         runner._config_path = "config.yaml"
@@ -134,7 +135,8 @@ class TestFrontendSupervision:
 
         async def scenario():
             runner._frontend_process = _FakeProc(pid=1)
-            task = asyncio.ensure_future(runner._watch_frontend(FRONTEND_TUI))
+            runner._frontend_generation = 1
+            task = asyncio.ensure_future(runner._watch_frontend(FRONTEND_TUI, 1))
             await asyncio.sleep(0)
             for code in exits:
                 runner._frontend_process.exit_with(code)
@@ -182,13 +184,15 @@ class TestFrontendSupervision:
         runner._shutting_down = False
         runner._frontend = FRONTEND_TUI
         runner._frontend_restarts = 0
+        runner._frontend_generation = 1
         runner.modules = {}
         released = []
         runner._release_terminal = lambda kind: released.append(kind)
 
         async def scenario():
             runner._frontend_process = _FakeProc(pid=1)
-            task = asyncio.ensure_future(runner._watch_frontend(FRONTEND_TUI))
+            runner._frontend_generation = 1
+            task = asyncio.ensure_future(runner._watch_frontend(FRONTEND_TUI, 1))
             await asyncio.sleep(0)
             runner._frontend_process.exit_with(0)
             await asyncio.sleep(0)
@@ -202,6 +206,197 @@ class TestFrontendSupervision:
         assert released == [FRONTEND_TUI]
 
 
+class TestFrontendOpenCommand:
+    """The parent handles `command.frontend.open` from the console/TUI."""
+
+    def _runner(self, monkeypatch):
+        from aiassistant.main import AssistantRunner, FRONTEND_GUI
+
+        runner = AssistantRunner.__new__(AssistantRunner)
+        runner._frontend = FRONTEND_GUI
+        runner._frontend_process = None
+        runner._frontend_spawning = False
+        runner._frontend_restarts = 0
+        runner._frontend_generation = 0
+        runner._shutting_down = False
+        runner.modules = {}
+        runner._config_path = "config.yaml"
+        return runner
+
+    def test_open_command_schedules_a_spawn(self, monkeypatch):
+        import asyncio
+        runner = self._runner(monkeypatch)
+        opened = []
+
+        async def fake_open(kind):
+            opened.append(kind)
+
+        monkeypatch.setattr(runner, "_open_frontend", fake_open)
+
+        async def scenario():
+            runner._handle_frontend_open("command.frontend.open", {"kind": "tui"})
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+        asyncio.run(scenario())
+        assert opened == ["tui"]
+
+    def test_unknown_kind_is_ignored(self, monkeypatch):
+        import asyncio
+        runner = self._runner(monkeypatch)
+        opened = []
+
+        async def fake_open(kind):
+            opened.append(kind)
+
+        monkeypatch.setattr(runner, "_open_frontend", fake_open)
+
+        async def scenario():
+            runner._handle_frontend_open("command.frontend.open", {"kind": "holo"})
+            await asyncio.sleep(0)
+
+        asyncio.run(scenario())
+        assert opened == []
+
+    def test_a_live_child_blocks_a_second_spawn(self, monkeypatch):
+        import asyncio
+        runner = self._runner(monkeypatch)
+        runner._frontend_process = _FakeProc(pid=1, returncode=None)
+        opened = []
+
+        async def fake_open(kind):
+            opened.append(kind)
+
+        monkeypatch.setattr(runner, "_open_frontend", fake_open)
+
+        async def scenario():
+            runner._handle_frontend_open("command.frontend.open", {"kind": "gui"})
+            await asyncio.sleep(0)
+
+        asyncio.run(scenario())
+        assert opened == []
+
+    def test_two_requests_in_one_tick_spawn_once(self, monkeypatch):
+        """The real `_open_frontend` runs twice; the in-flight flag stops the second.
+
+        The first task sets the flag before its first await, so the second sees
+        it and returns. `_do_open_frontend` is stubbed so no process is created.
+        """
+        import asyncio
+        from aiassistant.main import FRONTEND_TUI
+        runner = self._runner(monkeypatch)
+        calls = []
+
+        async def fake_do_open(kind, generation):
+            calls.append((kind, generation))
+            await asyncio.sleep(0)
+
+        monkeypatch.setattr(runner, "_do_open_frontend", fake_do_open)
+
+        async def scenario():
+            t1 = asyncio.ensure_future(runner._open_frontend(FRONTEND_TUI))
+            t2 = asyncio.ensure_future(runner._open_frontend(FRONTEND_TUI))
+            await asyncio.gather(t1, t2)
+
+        asyncio.run(scenario())
+        assert len(calls) == 1, calls
+        assert runner._frontend_spawning is False, "the flag must be cleared"
+        assert runner._frontend_generation == 1
+
+    def test_flag_is_cleared_even_when_the_spawn_degrades(self, monkeypatch):
+        """The tui-unavailable early return must still clear the flag."""
+        import asyncio
+        from aiassistant.main import FRONTEND_TUI
+        runner = self._runner(monkeypatch)
+        monkeypatch.setattr("aiassistant.main.tui_available",
+                            lambda: (False, "no terminal"))
+
+        async def scenario():
+            await runner._open_frontend(FRONTEND_TUI)
+
+        asyncio.run(scenario())
+        assert runner._frontend_spawning is False
+        assert runner._frontend is not None
+
+    def test_shutdown_command_sets_the_event(self):
+        import asyncio
+        from aiassistant.main import AssistantRunner
+        runner = AssistantRunner.__new__(AssistantRunner)
+        runner._shutdown_event = asyncio.Event()
+        runner._handle_shutdown_command("command.assistant.shutdown", {})
+        assert runner._shutdown_event.is_set() is True
+
+
+class TestWatcherOwnership:
+    """A replaced child's watcher must not release its successor's tty."""
+
+    def _runner(self):
+        from aiassistant.main import AssistantRunner, FRONTEND_TUI
+
+        runner = AssistantRunner.__new__(AssistantRunner)
+        runner._shutting_down = False
+        runner._frontend = FRONTEND_TUI
+        runner._frontend_restarts = 0
+        runner._frontend_generation = 1
+        runner.modules = {}
+        runner._config_path = "config.yaml"
+        return runner
+
+    def test_stale_watcher_does_not_release_the_tty(self, monkeypatch):
+        import asyncio
+        runner = self._runner()
+        released = []
+        runner._release_terminal = lambda kind: released.append(kind)
+        old = _FakeProc(pid=1)
+        runner._frontend_process = old
+
+        async def scenario():
+            task = asyncio.ensure_future(runner._watch_frontend("tui", 1))
+            await asyncio.sleep(0)
+            # A replacement frontend claims the next generation before the old
+            # child's exit is observed.
+            runner._frontend_generation = 2
+            runner._frontend_process = _FakeProc(pid=2)
+            old.exit_with(0)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        asyncio.run(scenario())
+        assert released == [], "the old watcher must not release the new tty"
+
+    def test_current_watcher_still_releases_on_clean_exit(self, monkeypatch):
+        import asyncio
+        runner = self._runner()
+        released = []
+        runner._release_terminal = lambda kind: released.append(kind)
+        proc = _FakeProc(pid=1)
+        runner._frontend_process = proc
+
+        async def scenario():
+            task = asyncio.ensure_future(runner._watch_frontend("tui", 1))
+            await asyncio.sleep(0)
+            proc.exit_with(0)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        asyncio.run(scenario())
+        assert released == ["tui"]
+
+
 class TestStartupGrace:
     """A child that cannot run on this host must not be retried."""
 
@@ -213,6 +408,7 @@ class TestStartupGrace:
         runner._shutting_down = False
         runner._frontend = FRONTEND_TUI
         runner._frontend_restarts = 0
+        runner._frontend_generation = 1
         runner.modules = {}
         spawned = []
 
@@ -228,7 +424,8 @@ class TestStartupGrace:
 
         async def scenario():
             runner._frontend_process = _FakeProc(pid=1)
-            task = asyncio.ensure_future(runner._watch_frontend(FRONTEND_TUI))
+            runner._frontend_generation = 1
+            task = asyncio.ensure_future(runner._watch_frontend(FRONTEND_TUI, 1))
             await asyncio.sleep(0)
             runner._frontend_process.exit_with(1)
             await asyncio.sleep(0)

@@ -33,7 +33,9 @@ class TestTabCompletion:
         assert "/log" in results
         assert "/thinking" in results
         assert "/clear" in results
-        assert len(results) == 6
+        assert "/tui" in results
+        assert "/gui" in results
+        assert len(results) == 8
 
     def test_complete_partial_command(self, cli, monkeypatch):
         monkeypatch.setattr("aiassistant.console.module.readline.get_line_buffer", lambda: "/he")
@@ -316,6 +318,43 @@ class TestTerminalOwnership:
         cli.suspend_terminal()
         cli.suspend_terminal()
         assert cli._owns_terminal is False
+
+
+class TestFrontendCommands:
+    """/tui and /gui ask the parent to spawn a frontend; the console does not."""
+
+    def _cli(self):
+        from aiassistant.bus.bus import MessageBus
+        return ConsoleModule(MessageBus(), {})
+
+    def _published(self, cli, line):
+        import asyncio
+        seen = []
+        cli.bus.subscribe(topics.COMMAND_FRONTEND_OPEN,
+                          lambda t, p: seen.append(p))
+        asyncio.run(cli._handle_line(line))
+        return seen
+
+    def test_tui_publishes_the_open_command(self, capsys):
+        cli = self._cli()
+        assert self._published(cli, "/tui") == [{"kind": "tui"}]
+
+    def test_gui_publishes_the_open_command(self, capsys):
+        cli = self._cli()
+        assert self._published(cli, "/gui") == [{"kind": "gui"}]
+
+    def test_does_not_double_spawn_when_a_frontend_is_open(self, capsys):
+        cli = self._cli()
+        cli.frontend_started("tui")
+        assert self._published(cli, "/gui") == []
+        assert "already open" in capsys.readouterr().out
+
+    def test_open_again_after_the_frontend_stops(self):
+        cli = self._cli()
+        cli.frontend_started("tui")
+        cli.frontend_stopped()
+        assert cli._frontend_open is False
+        assert self._published(cli, "/gui") == [{"kind": "gui"}]
 
 
 class TestHelpHotword:

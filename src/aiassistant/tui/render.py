@@ -557,7 +557,7 @@ class Renderer:
 
     HELP_LINES = (
         "F1, Esc     close this help",
-        "Ctrl+D      quit the TUI (assistant keeps running)",
+        "Ctrl+D      close the TUI only (assistant keeps running)",
         "Enter       send the composer",
         "Esc         close help / clear input / interrupt",
         "Ctrl+T      toggle mute",
@@ -568,6 +568,7 @@ class Renderer:
         "Home, End   oldest / newest",
         "/clear      clear the transcript view",
         "/help       show this help",
+        "/exit       shut down the assistant",
     )
 
     def _help_lines(self) -> tuple[str, ...]:

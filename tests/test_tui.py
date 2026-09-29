@@ -120,6 +120,19 @@ class TestInputPublishes:
         _drive(app, lambda: app._handle_key(tokens.CTRL_DOT))
         assert bridge.published == [(topics.COMMAND_AGENT_INTERRUPT, {})]
 
+    def test_exit_publishes_shutdown_without_stopping_the_tui(self):
+        bridge = FakeBridge()
+        app = _app(bridge)
+
+        def action():
+            for ch in "/exit":
+                app._insert(ch)
+            app._submit()
+
+        _drive(app, action)
+        assert bridge.published == [(topics.COMMAND_ASSISTANT_SHUTDOWN, {})]
+        assert app._stop is False  # Ctrl+D still owns quitting the TUI itself
+
     def test_ctrl_d_stops(self):
         app = _app()
         app._handle_key(tokens.CTRL_D)

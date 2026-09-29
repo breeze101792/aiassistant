@@ -183,6 +183,11 @@ class AssistantRunner:
         self._frontend: str = FRONTEND_NONE
         self._frontend_process = None
         self._frontend_restarts = 0
+        self._frontend_spawning = False
+        # Bumped on every spawn request. A watcher only owns the tty and the
+        # console flag while its generation is current, so a replaced child
+        # cannot tear down its successor's terminal.
+        self._frontend_generation = 0
         self._shutting_down = False
 
     async def start(self):
@@ -243,8 +248,36 @@ class AssistantRunner:
         # (REQ-CONSOLE-001).
         await self._maybe_start_frontend()
 
+        # Commands from a frontend (TUI) arrive over the remote bus.
+        self.bus.subscribe(topics.COMMAND_ASSISTANT_SHUTDOWN,
+                           self._handle_shutdown_command)
+        self.bus.subscribe(topics.COMMAND_FRONTEND_OPEN,
+                           self._handle_frontend_open)
+
         # Wait for shutdown
         await self._shutdown_event.wait()
+
+    def _handle_shutdown_command(self, topic: str, payload: dict) -> None:
+        """End the whole assistant, the same path as SIGINT. Never raises."""
+        logger.info("Shutdown requested by a frontend")
+        self._shutdown_event.set()
+
+    def _handle_frontend_open(self, topic: str, payload: dict) -> None:
+        """Open a frontend on request. Called synchronously from bus.publish."""
+        kind = payload.get("kind")
+        if kind not in (FRONTEND_TUI, FRONTEND_GUI):
+            logger.warning("Ignoring frontend open with unknown kind: %r", kind)
+            return
+        if self._frontend_spawning:
+            # A spawn is already in flight; the process is not assigned yet, so
+            # the process check alone would let a second request through.
+            logger.info("A frontend is already opening; ignoring %s request", kind)
+            return
+        proc = self._frontend_process
+        if proc is not None and proc.returncode is None:
+            logger.info("A frontend is already open; ignoring %s request", kind)
+            return
+        asyncio.ensure_future(self._open_frontend(kind))
 
     async def _maybe_start_frontend(self) -> None:
         """Spawn the chosen visual frontend, if any.
@@ -254,39 +287,58 @@ class AssistantRunner:
         assistant, so every path here degrades (REQ-CONSOLE-001).
         """
         frontend = resolve_frontend(self.config, cli_choice=self._display_choice)
-        tui_ok, tui_reason = tui_available()
-        self._frontend, note = frontend_plan(frontend, tui_ok)
+        tui_ok, _ = tui_available()
+        kind, note = frontend_plan(frontend, tui_ok)
         if note:
             logger.warning("Frontend %r: %s", frontend, note)
+        self._frontend = kind
+        if kind in (FRONTEND_GUI, FRONTEND_TUI):
+            await self._open_frontend(kind)
 
-        if self._frontend == FRONTEND_GUI:
-            if not self._pyside_available():
-                logger.warning(
-                    "PySide6 is not installed; not starting the orb. "
-                    "Install it with: pip install 'aiassistant[ui]'"
-                )
-                self._frontend, note = frontend_plan(FRONTEND_TUI, tui_ok)
-                if note:
-                    logger.warning("%s", note)
-            else:
-                if await self._spawn_frontend(FRONTEND_GUI, ("aiassistant.orb",),
-                                              initial=True):
-                    asyncio.ensure_future(self._watch_frontend(FRONTEND_GUI))
-                return
+    async def _open_frontend(self, kind: str) -> None:
+        """Open one explicit frontend kind, shared by startup and /tui //gui.
 
-        if self._frontend == FRONTEND_TUI:
+        Degrades instead of failing: a missing PySide6 falls back to the TUI,
+        and an unusable terminal to text only, so the assistant always runs.
+        The in-flight flag and the generation are set before the first await,
+        so a second request cannot slip past while the process is unassigned
+        and a replaced child's watcher cannot release the new child's tty.
+        """
+        if self._frontend_spawning:
+            logger.info("A frontend is already opening; ignoring %s request", kind)
+            return
+        self._frontend_spawning = True
+        self._frontend_generation += 1
+        generation = self._frontend_generation
+        try:
+            await self._do_open_frontend(kind, generation)
+        finally:
+            self._frontend_spawning = False
+
+    async def _do_open_frontend(self, kind: str, generation: int) -> None:
+        if kind == FRONTEND_GUI and not self._pyside_available():
+            logger.warning(
+                "PySide6 is not installed; not starting the orb. "
+                "Install it with: pip install 'aiassistant[ui]'"
+            )
+            kind = FRONTEND_TUI
+        console = self.modules.get("console")
+        if kind == FRONTEND_TUI:
+            tui_ok, reason = tui_available()
             if not tui_ok:
-                logger.warning("Terminal UI unavailable: %s", tui_reason)
+                logger.warning("Terminal UI unavailable: %s", reason)
                 self._frontend = FRONTEND_NONE
                 return
             # The TUI owns the tty, so yield it before the child starts. A spawn
             # failure resumes it again in _spawn_frontend.
-            console = self.modules.get("console")
             if console is not None:
                 console.suspend_terminal()
-            if await self._spawn_frontend(FRONTEND_TUI, ("aiassistant.tui",),
-                                          initial=True):
-                asyncio.ensure_future(self._watch_frontend(FRONTEND_TUI))
+        argv = ("aiassistant.orb",) if kind == FRONTEND_GUI else ("aiassistant.tui",)
+        if await self._spawn_frontend(kind, argv, initial=True):
+            self._frontend = kind
+            if console is not None:
+                console.frontend_started(kind)
+            asyncio.ensure_future(self._watch_frontend(kind, generation))
 
     @staticmethod
     def _pyside_available() -> bool:
@@ -323,7 +375,7 @@ class AssistantRunner:
         logger.info("%s started (pid=%s)", kind, self._frontend_process.pid)
         return True
 
-    async def _watch_frontend(self, kind: str) -> None:
+    async def _watch_frontend(self, kind: str, generation: int) -> None:
         """Supervise a frontend child. A crash changes only the UI.
 
         The sole owner of respawns, so the restart budget holds and no second
@@ -331,13 +383,18 @@ class AssistantRunner:
         user closed the UI, so it is not a crash and is not respawned. A child
         that dies within the startup grace cannot run on this host, so it is not
         retried — retrying only delays the fallback.
+
+        A watcher only acts while its generation is current: a replacement
+        frontend bumps the generation, and the old watcher then returns without
+        releasing the tty or clearing the console flag, which would tear down
+        the successor's terminal.
         """
         proc = self._frontend_process
         started = asyncio.get_running_loop().time()
         while proc is not None:
             code = await proc.wait()
             alive_for = asyncio.get_running_loop().time() - started
-            if self._shutting_down:
+            if self._shutting_down or generation != self._frontend_generation:
                 return
             if code == 0:
                 logger.info("%s closed by the user", kind)
@@ -367,9 +424,11 @@ class AssistantRunner:
 
     def _release_terminal(self, kind: str) -> None:
         """Give the tty back to the console after a TUI child exits."""
+        console = self.modules.get("console")
+        if console is not None:
+            console.frontend_stopped()
         if kind != FRONTEND_TUI:
             return
-        console = self.modules.get("console")
         if console is not None:
             console.resume_terminal()
 
