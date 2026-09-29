@@ -141,7 +141,9 @@ STATE_COLOR_256 = {
     "listening": 79,
     "speaking": 221,
 }
-FG_DIM = 8
+# Light grey for the dim/secondary pair. Never bright-black (index 8): on a
+# dark or transparent theme that is the background, so dim text vanishes.
+FG_DIM_256 = 250
 FG_ERROR = 1
 FG_WARN = 3
 FG_ACCENT = 6
@@ -151,11 +153,12 @@ FG_USER = 2
 def dim_fg(colors: int) -> int:
     """Foreground for the dim/secondary pair.
 
-    The 256-color value is the bright-black index 8 from tokens.md; an 8-color
-    terminal has no index 8, so it falls back to the terminal's white, which
-    ``A_DIM`` renders as grey.
+    The 256-color value is a light grey, never the bright-black index 8: on a
+    dark theme a terminal maps 8 to near-black, which disappears against the
+    background. An 8-color terminal has no grey, so it uses the terminal's own
+    white, which ``A_DIM`` renders as grey.
     """
-    return FG_DIM if colors >= 256 else 7
+    return FG_DIM_256 if colors >= 256 else 7
 
 # ── Terminal key codes ───────────────────────────────────────
 CTRL_C = 3

@@ -96,13 +96,16 @@ Color pairs are an **enhancement only**. The monochrome fallback column is the
 authority: a state must remain fully legible using only the word and the glyph.
 Pairs are registered with `init_pair(cp, fg, bg)` when
 `curses.has_colors()` is true, and the foreground index is chosen for the
-terminal's palette (the terminal's own 0–7/0–15 colors, never RGB).
+terminal's palette (the terminal's own 0–7/0–15 colors, never RGB). The
+background is always the terminal default (`use_default_colors()`), never a
+fixed index: a terminal background may be transparent, and a painted black is
+unreadable on it.
 
 | Token | cp | fg (256-color index) | Used by | Monochrome fallback |
 | --- | --- | --- | --- | --- |
 | `cpDefault` | 0 | default | everything | terminal default |
 | `cpState` | 1 | per-state, see below | header state label + form glyph | already bold + labelled + glyph |
-| `cpDim` | 2 | `colorTextMuted`-ish (8) | gutters, timestamps, hints | `A_DIM` already |
+| `cpDim` | 2 | light grey (250) | gutters, timestamps, hints | `A_DIM` already |
 | `cpError` | 3 | red (1 / 203) | error gutter `!Error`, hint | `!Error` text and `!` badge already |
 | `cpWarn` | 4 | yellow/orange (3 / 214) | `backend-down` overlay, badge `!` | words "Backend down" already |
 | `cpAccent` | 5 | cyan/blue (6 / 39) | streaming cursor, meter fill | `_` cursor and `#` fill already |

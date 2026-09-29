@@ -213,11 +213,18 @@ class Renderer:
             if not curses.has_colors():
                 return
             curses.start_color()
+            # Never paint a background. A terminal's background may be
+            # transparent, but a fixed black is always black, so painting it
+            # draws unreadable blocks behind every colored glyph (the dim text
+            # most of all).
+            self._bg = -1
             try:
                 curses.use_default_colors()
-                self._bg = -1
             except curses.error:
-                self._bg = curses.COLOR_BLACK
+                # Color pairs cannot carry the default background; skip them
+                # and let the monochrome path draw instead.
+                logger.debug("default colors unavailable; drawing monochrome")
+                return
             self._init_fixed_pairs()
             self._colors = True
         except curses.error:
