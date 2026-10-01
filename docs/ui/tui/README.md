@@ -32,7 +32,7 @@ reviewed · `reviewed` passed `challenger` · `as-built` reflects shipped code �
 | View model | reuses `OrbViewModel` (`orb/model.py`), Qt-free | [frontends.md §2.1](../../requirements/features/frontends.md) |
 | Orb states | `connecting\|idle\|muted\|listening\|transcribing\|thinking\|speaking\|error` + `backend-down` and `transcript-error` overlays | [orb-states.md](../orb-states.md) |
 | Topic surface | same subscribe/publish set as the GUI orb | [orb-ui.md §Data flow](../../requirements/features/orb-ui.md), [protocols.md IF-0004](../../contracts/protocols.md) |
-| Constraints | keyboard only, no mouse, no animation, monochrome-safe, ASCII-first | [frontends.md §2.3–2.5, §5](../../requirements/features/frontends.md) |
+| Constraints | keyboard-first, mouse optional, no animation, monochrome-safe, ASCII-first | [frontends.md §2.3–2.5, §5](../../requirements/features/frontends.md) |
 
 ## Concept
 

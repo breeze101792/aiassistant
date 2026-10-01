@@ -104,6 +104,13 @@ process and any future out-of-process module.
 
 - The connection, its subscriptions, and the reconnect state.
 
+### CONNECTED STATE
+
+`on_state("connected")` is reported only after the subscription replay has been
+queued on the socket, on both the first connect and a reconnect. A client may
+therefore publish a request from its connected handler (for example a
+`voice.state.request` resync) without racing the forwarder registration.
+
 ### ERRORS
 
 | Code | Meaning |

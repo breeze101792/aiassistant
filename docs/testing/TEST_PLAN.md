@@ -54,8 +54,8 @@ doc's contract with the code, not strings in the code.
 | `tests/test_reasoning.py` | `reasoning/` provider construction | T-0603 |
 | `tests/test_reasoning_stream.py` | `reasoning/` streaming, factory, loop-yield | T-0601, T-0605 |
 | `tests/test_tools.py` | `tools/` tools, sandbox, skills, timeout key | T-0701..T-0705 |
-| `tests/test_voice.py` | `voice/` FSM, chunker, queue, wake, backend selection | T-0103..T-0105, T-0107, T-0109 |
-| `tests/test_voice_asr.py` | `voice/asr/` backends (stub/whisper/funasr/HalASR) | T-0106, optional-dep guarded |
+| `tests/test_voice.py` | `voice/` FSM, chunker, queue, wake, factory backend selection | T-0103..T-0105, T-0107, T-0109 |
+| `tests/test_voice_asr.py` | `voice/asr/` backends (stub/whisper/funasr) and the ASR hand-off | T-0106, optional-dep guarded |
 | `tests/test_orb.py` | `orb/model.py` view model, theme, feed dispatch | T-0202, T-0203, T-0205, T-0206 |
 | `tests/test_console.py` | `console/` commands, streaming, terminal ownership, /help | T-0902..T-0905, T-0907, T-0908 |
 | `tests/test_display.py` | frontend resolution, gui/tui availability | T-1201..T-1204, T-1208, T-1210 |

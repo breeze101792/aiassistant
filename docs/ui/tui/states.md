@@ -24,7 +24,7 @@ Identical to [../orb-states.md § State sources](../orb-states.md#state-sources)
 | Tier | States | Source | Lifetime |
 | --- | --- | --- | --- |
 | **Base** | `idle`, `listening`, `transcribing`, `thinking`, `speaking`, `error`, `muted` | `voice.state` | Until the next `voice.state` |
-| **Orb-local** | `connecting` | The TUI's own bridge state (unreachable) | Until the first forward arrives |
+| **Orb-local** | `connecting` | The TUI's own bridge state (unreachable) | Until the first forward arrives, including the `voice.state.request` reply |
 | **Overlay** | `backend-down` | `agent.turn.error` with `class: "harness"`, or a failed health probe | Until the next successful turn event or `voice.state` change |
 | **Overlay** | `transcript-error` | `agent.turn.error` with `class` ≠ `harness` | Until dismissed or the next turn |
 
@@ -52,7 +52,8 @@ state label, the overlay text if any, and the backend badge.
 
 The badge (right-aligned in the header) reads `native / qwen3:latest` from
 `status.harness`; when `backend-down` is set it gains a trailing ` !` and uses
-`cpWarn`. Before the first `status.harness` it reads `native / unknown`. The
+`cpWarn`. The TUI requests `status.harness` on every connect, so it fills shortly
+after the bridge connects rather than waiting for a harness change. The
 badge is data, not a state, so it does not change the state label.
 
 ### `error` versus `transcript-error`
@@ -129,7 +130,7 @@ IDLE ──> LISTENING ──> TRANSCRIBING ──> THINKING ──> SPEAKING �
 | Trigger | TUI behavior |
 | --- | --- |
 | Any base transition | The header glyph and label change on the next redraw; there is no crossfade |
-| `connecting` → any base | The first forward after (re)subscribe; the TUI **starts** in `connecting` |
+| `connecting` → any base | The first forward after (re)subscribe; the TUI requests `voice.state` on every connect, so this does not depend on a live event |
 | any → `connecting` | Bridge disconnect; backoff retries are counted in a dim line under the header (see [layout.md](layout.md#connecting)) |
 | `backend-down` set | Append `  ! Backend down` to the header and draw the `[harness]` error row |
 | `backend-down` cleared | The next `agent.delta`, `agent.final`, or `voice.state` change removes the overlay text |

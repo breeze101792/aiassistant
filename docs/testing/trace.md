@@ -21,7 +21,7 @@ All 93 requirements from
 | REQ-VOICE-001 | verified | T-0101, T-0102 | mock, host |
 | REQ-VOICE-002 | verified | T-0103 | host |
 | REQ-VOICE-003 | verified | T-0108 | rig |
-| REQ-VOICE-004 | **failing test, real bug (BUG-5)** — T-0109 proves `halasr` does not select `HalASRBackend` | T-0109 | host |
+| REQ-VOICE-004 | verified — ADR-0018: `voice.factory` selects the backend; unknown value fails setup naming the value (T-0109) | T-0109 | host |
 | REQ-VOICE-005 | verified | T-0107 | host |
 | REQ-VOICE-006 | verified | T-0104, T-0105 | mock, host |
 
@@ -201,7 +201,7 @@ Every case and the requirement it traces to. A row with no REQ is scope creep.
 | T-0101 | Segment → transcript published | REQ-VOICE-001 |
 | T-0102 | Bounded segment queue drops oldest | REQ-VOICE-001 |
 | T-0103 | Chunker flushes at sentence boundary | REQ-VOICE-002 |
-| T-0109 | `halasr` backend selection | REQ-VOICE-004 |
+| T-0109 | ASR backend selection and unknown-value error | REQ-VOICE-004 |
 | T-0104 | Stop flag silences playback | REQ-WAKE-005, REQ-VOICE-006 |
 | T-0105 | State machine rejects impossible transitions | REQ-WAKE-006, REQ-VOICE-006 |
 | T-0106 | Wake phrase strips and gates | REQ-WAKE-002, REQ-WAKE-003 |
@@ -295,8 +295,8 @@ node ids; the suite collects 400 node ids across 24 files.
 | --- | --- |
 | Total requirements | 93 |
 | Requirements withdrawn 2026-09-27 (external harness removed) | 7 |
-| Requirements verified (full) | 67 |
-| Requirements with a failing proving test (real bugs) | 8 (REQ-VOICE-004, REQ-CONV-002, REQ-TOOL-003, REQ-TOOL-004, REQ-MEM-006, REQ-CFG-003, REQ-CFG-006, REQ-SCHED-003) |
+| Requirements verified (full) | 68 |
+| Requirements with a failing proving test (real bugs) | 7 (REQ-CONV-002, REQ-TOOL-003, REQ-TOOL-004, REQ-MEM-006, REQ-CFG-003, REQ-CFG-006, REQ-SCHED-003) |
 | Requirements partial (a proving T covers part of the clause) | 2 (REQ-STRUCT-001, REQ-CFG-002) |
 | Requirements `unverified` | 20 |
 | Total test cases | 84 |
@@ -314,7 +314,6 @@ when the defect is fixed. No production code was changed.
 | BUG-2 `tools.timeout_s` ignored | REQ-TOOL-003, REQ-CFG-003 | `tools/module.py:29` reads `command_timeout`; `schemas.md:238` documents `timeout_s` | tooling |
 | BUG-3 Overdue recurring task never advances | REQ-SCHED-003 | `scheduler/module.py:101` re-arms to `fire_time + interval`, still past; re-fires per tick | python |
 | BUG-4 `conversation.busy: queue` unimplemented | REQ-CONV-002 | `agent/module.py:273-277` always cancels regardless of `busy_policy` | python |
-| BUG-5 `voice.backend: halasr` silently stubbed | REQ-VOICE-004 | `voice/module.py:439-453` has no `halasr` branch; `HalASRBackend` lacks `transcribe`; `--audio` sets this value (`main.py:437`) | firmware/voice |
 | BUG-6 Embeddings unavailable latch never resets | REQ-MEM-006 | `embeddings.py:66-68` sets `_embeddings_unavailable`; `set_llm` does not clear it | python |
 | BUG-7 `agents:` map ignored | REQ-CFG-006 | `agent/module.py:30` reads singular `agent`; `schemas.md:200-223` documents `agents:` | python |
 

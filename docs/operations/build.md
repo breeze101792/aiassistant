@@ -10,11 +10,26 @@
 
 ## Install
 
+`./start.sh` does this; the manual equivalent is shown for reference.
+
 ```sh
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+./start.sh test             # creates the venv, installs, runs the suite
 ```
+
+Manually:
+
+```sh
+python3 -m venv .venv_$(uname -n)     # per-host, see below
+source .venv_$(uname -n)/bin/activate
+pip install -e '.[dev]'               # or -e . for the runtime only
+```
+
+**The venv is per host.** A virtualenv stores absolute symlinks to the
+interpreter that created it, so it is not portable: copying or syncing the repo
+between machines leaves a venv whose `python` link dangles, at which point the
+shell falls back to the system interpreter. `start.sh` therefore names the venv
+`.venv_<hostname>` and verifies it can actually run (`sys.prefix` matches, and
+pip works) before using it. Set `VENV=/path` to override.
 
 System packages:
 

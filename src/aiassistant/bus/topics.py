@@ -26,6 +26,10 @@ VOICE_LEVEL = "voice.level"
 VOICE_TRANSCRIBED = "voice.transcribed"
 VOICE_SPEAK = "voice.speak"
 VOICE_OVERFLOW = "voice.overflow"
+# Connect-time resync request: a late-connecting client asks for the current
+# state, since voice.state is edge-triggered and published at startup. A request
+# with no subscriber is a harmless no-op.
+VOICE_STATE_REQUEST = "voice.state.request"
 
 # ── Commands ─────────────────────────────────────────────────
 COMMAND_AGENT_INTERRUPT = "command.agent.interrupt"
@@ -44,6 +48,8 @@ STATUS_TOOLS_READY = "status.hands.ready"  # as-built
 # ── Status ───────────────────────────────────────────────────
 STATUS_ASSISTANT_READY = "status.assistant.ready"
 STATUS_HARNESS = "status.harness"
+# Connect-time resync request for the harness badge (see VOICE_STATE_REQUEST).
+STATUS_HARNESS_REQUEST = "status.harness.request"
 BUS_MODULE_CONNECTED = "bus.module.connected"
 BUS_MODULE_DISCONNECTED = "bus.module.disconnected"
 

@@ -123,7 +123,7 @@ dropped the oldest segment (IF-0006).
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `harness` | `"native"` | yes | The active loop owner |
-| `model` | str | yes | Model reported by the harness |
+| `model` | str | yes | Model reported by the harness; empty when the harness has no provider |
 
 ### `voice.state`
 
@@ -132,6 +132,26 @@ dropped the oldest segment (IF-0006).
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `state` | enum (see [IF-0005](protocols.md#if-0005-voice-events)) | yes | `idle` \| `listening` \| `transcribing` \| `thinking` \| `speaking` \| `error` \| `muted` |
+| `muted` | bool | no | Present on `set_mute` and on a request reply; the local toggle desyncs otherwise |
+| `previous` | enum | no | Present on a transition; absent from a request reply |
+
+A reply to `voice.state.request` is shape-identical to a transition event and
+carries the last state actually published, so a late-connecting client converges
+on the same value as a connected one. It is a level read: it does not move the
+FSM and does not publish a second time.
+
+### `voice.state.request`
+
+**Status:** new. Empty payload. A late-connecting client (orb, tui) publishes
+this once per bridge connect; the voice module replies on `voice.state` with the
+current state and mute flag. Fire-and-forget: with no subscriber it is a
+harmless no-op, so a frontend can connect to an older assistant.
+
+### `status.harness.request`
+
+**Status:** new. Empty payload. The client asks the agent for the current
+`status.harness` badge; the agent replies on `status.harness`. Same
+fire-and-forget contract as `voice.state.request`.
 
 ### `voice.level`
 
@@ -236,7 +256,7 @@ the reload policy below.
 
 | Section | Keys | Notes |
 | --- | --- | --- |
-| `voice` | `listen.mode` (`ptt`\|`open`\|`wake`), `asr.backend`, `asr.endpoint_silence_ms`, `tts.backend`, `tts.voice`, `tts.speed`, `wake.window_ms`, `barge_in.stop_ms`, `turn_latency_target_ms`, `speak_text_turns`, `overflow` policy | ASR backends: whisper, funasr, halasr, stub; TTS: edge_tts, text, stub (`features/voice-pipeline.md:79-80`) |
+| `voice` | `listen.mode` (`ptt`\|`open`\|`wake`), `hotwords`, `endpoint_silence_ms`, `wake_window_ms`, `speak_text_turns`, `barge_in.enabled`, `vad.backend`, `vad.energy_threshold`, `vad.aggressiveness`, `segmenter.preroll_ms`, `segmenter.min_utterance_ms`, `segmenter.max_utterance_ms`, `asr.backend`, `asr.model`, `asr.device`, `asr.compute_type`, `asr.base_url`, `asr.api_key`, `asr.api_key_env`, `asr.language`, `tts.backend`, `tts.voice`, `tts.speed` | ASR backends: faster_whisper (offline, default), whisper_server (self-hosted), whisper, funasr, stub; VAD: energy, webrtc; TTS: edge_tts, text (`features/voice-pipeline.md:79-80`) |
 | `tools` | `paths`, `timeout_s`, `sandbox_default`, `safe_paths`, `artifacts_path`, `max_retries` | Was `hands` (`config.yaml:55-61`) |
 | `vision` | `backend` (`stub`), `camera_index`, `vision_model` | Was `eyes`; stub only |
 | `messaging` | `backends` (`[]`), `telegram.token`, `telegram.allowed_users` | Was `chat`; disabled by default |
@@ -313,9 +333,9 @@ copy would be wrong by a factor of 1000 or name a different concept.
 | `brain.embeddings.url` | `embeddings.url` | Direct |
 | `brain.embeddings.batch_size` | `embeddings.batch_size` | Direct |
 | `ears.backend` | `voice.asr.backend` | Direct |
-| `ears.recognizer` | `voice.asr.recognizer` | Direct; only meaningful for `halasr` |
-| `ears.hotwords` | `agents.<id>.identity.wake_phrases` | Moved to the identity; the hotword list *is* the wake-phrase list |
-| `ears.silence_timeout` | `voice.asr.endpoint_silence_ms` | **Unit change: seconds → milliseconds.** As-built `20` means 20 s; new value `20000` |
+| `ears.recognizer` | — | **Dropped.** It was meaningful only to the removed pre-ADR fused backend (ADR-0018) |
+| `ears.hotwords` | `voice.hotwords` | Direct; the hotword list *is* the wake-phrase list |
+| `ears.silence_timeout` | `voice.endpoint_silence_ms` | **Unit change: seconds → milliseconds.** As-built `20` means 20 s; new value `20000` |
 | `mouth.backend` | `voice.tts.backend` | Direct |
 | `mouth.voice` | `voice.tts.voice` | Direct |
 | `mouth.speed` | `voice.tts.speed` | Direct |

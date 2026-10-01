@@ -38,9 +38,22 @@ conversation context, and the tool-call policy counters.
 | Returns | none |
 | Preconditions | `setup()` returned `True` |
 | Postconditions | Input topics are subscribed; on stop, no turn task remains and the harness is closed |
-| Side effects | Subscribes to `user.input.text`, `schedule.triggered`, `command.agent.interrupt`, `status.tools.ready`; publishes nothing on start |
+| Side effects | Subscribes to `user.input.text`, `schedule.triggered`, `command.agent.interrupt`, `status.tools.ready`, `status.harness.request`; publishes nothing on start |
 | Context | async, called by `main.py` |
 | Timing | `stop()` waits for harness teardown up to `conversation.turn_timeout_s` |
+
+### `_handle_harness_request(topic, payload) -> None`
+
+| Field | Content |
+| --- | --- |
+| Purpose | Answer a late-connecting client's request for the backend badge. |
+| Parameters | none (`status.harness.request`, empty payload) |
+| Returns | none |
+| Preconditions | The harness is built; otherwise it is a no-op |
+| Postconditions | `status.harness` is published with the harness name and provider model (empty when the harness has no provider) |
+| Side effects | One `status.harness` publish |
+| Context | async, bus thread |
+| Timing | Immediate |
 
 ### `on_input(topic: str, payload: dict) -> None`
 

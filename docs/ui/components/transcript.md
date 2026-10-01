@@ -167,7 +167,7 @@ the transcript component exposes `pinned: bool` and `newCount: int` for the pill
 
 | State | Presentation |
 | --- | --- |
-| No messages | Centered "No messages yet. Say *hi jarvis* or type below." `typeBody`, `colorTextMuted` |
+| No messages | Centered "No messages yet. Say *<first hotword>* or type below." `typeBody`, `colorTextMuted`. The phrase comes from `voice.hotwords` |
 | Only thinking, no text yet | The thinking sub-row is visible; the assistant row shows a subtle typing indicator (three dots, `typeMuted`) until the first `text` delta |
 | Very long single turn | Text wraps; the row grows; the view stays pinned to the bottom while `streaming` |
 | Rapid turns | New rows append; the previous row's `streaming` clears first |

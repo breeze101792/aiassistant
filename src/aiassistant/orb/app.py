@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 WATCHED_TOPICS = (
     topics.VOICE_STATE,
     topics.VOICE_LEVEL,
+    # Speech the user said, so their turn appears in the transcript.
+    topics.VOICE_TRANSCRIBED,
     topics.AGENT_DELTA,
     topics.AGENT_FINAL,
     topics.AGENT_TOOL_EVENT,
@@ -132,6 +134,11 @@ class OrbWindow(QWidget):
         self.url = url
         self.token = token
         self._expanded = False
+        # Connect-time state resync: the base topic is edge-triggered, so the
+        # orb asks for the current state; a reply ends the retry.
+        self._resync_attempts = 0
+        self._resync_timer = QTimer(self)
+        self._resync_timer.timeout.connect(self._resync_tick)
 
         flags = Qt.FramelessWindowHint | Qt.Tool
         if always_on_top:
@@ -223,6 +230,27 @@ class OrbWindow(QWidget):
         for topic in WATCHED_TOPICS:
             self.ws.sendTextMessage(json.dumps({"action": "subscribe", "topic": topic}))
         self.status.setText("connected")
+        self._start_resync()
+
+    def _start_resync(self) -> None:
+        """Ask for the current state until a reply arrives.
+
+        A client can connect before the voice module has subscribed (the remote
+        bus starts before the modules, so a reconnect during an assistant
+        restart lands in that window); the request would be dropped with no
+        reply. Retry until the base state leaves ``connecting``.
+        """
+        self._resync_attempts = theme.RESYNC_ATTEMPTS
+        self._resync_timer.start(int(theme.RESYNC_INTERVAL_S * 1000))
+        self._resync_tick()
+
+    def _resync_tick(self) -> None:
+        if self._resync_attempts <= 0 or self.model.state != "connecting":
+            self._resync_timer.stop()
+            return
+        self._resync_attempts -= 1
+        self._publish(topics.VOICE_STATE_REQUEST, {})
+        self._publish(topics.STATUS_HARNESS_REQUEST, {})
 
     def _on_disconnected(self) -> None:
         self._set_state("connecting")
@@ -241,6 +269,10 @@ class OrbWindow(QWidget):
             return
 
         feed(self.model, topic, payload)
+        if topic == topics.VOICE_STATE and "muted" in payload:
+            # The resync reply reports mute; without this the local toggle
+            # would be stale after a reconnect.
+            self._muted = bool(payload["muted"])
         # Only a gap in the delta stream means the transcript is incomplete; other
         # topics (voice.level at 20 Hz) must not re-request the snapshot.
         if topic == topics.AGENT_DELTA and self.model.needs_snapshot:

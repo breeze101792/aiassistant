@@ -38,6 +38,11 @@ status.assistant.ready
 status.harness
 ```
 
+On connect (and every reconnect) the orb also **publishes** two resync requests,
+`voice.state.request` and `status.harness.request`; the `voice.state` and
+`status.harness` replies follow. Both are edge-triggered, so without the request
+a client that connects after the last event would show `connecting` forever.
+
 ---
 
 ## Worked example: one voice turn

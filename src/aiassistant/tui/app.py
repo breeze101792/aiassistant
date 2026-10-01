@@ -30,6 +30,8 @@ logger = logging.getLogger(__name__)
 WATCHED_TOPICS = (
     topics.VOICE_STATE,
     topics.VOICE_LEVEL,
+    # Speech the user said, so their turn appears in the transcript.
+    topics.VOICE_TRANSCRIBED,
     topics.AGENT_DELTA,
     topics.AGENT_FINAL,
     topics.AGENT_TOOL_EVENT,
@@ -68,6 +70,7 @@ class TuiApp:
         self._prev_row_count = 0
         self._snapshot_pending = False
         self._muted = False
+        self._resync_task: asyncio.Task | None = None
         self._signal_handlers: dict = {}
 
     # ── Bridge ───────────────────────────────────────────────
@@ -111,6 +114,10 @@ class TuiApp:
         """
         if topic == topics.VOICE_STATE:
             state = payload.get("state")
+            if "muted" in payload:
+                # The resync reply reports mute; without this the local toggle
+                # would be stale after a reconnect.
+                self._muted = bool(payload["muted"])
             if state:
                 self.ui.base_state = state
             if self.ui.overlay == "backend_down":
@@ -165,19 +172,46 @@ class TuiApp:
 
     async def _subscribe_all(self) -> None:
         bridge = self._ensure_bridge()
-        # The bridge replays its own subscriptions on reconnect, so subscribe
-        # only on the first connect. Subscribing again would register a second
-        # forwarder server-side and double every message.
-        if bridge.subscriptions:
-            return
+        # Subscribe only what is not already registered: the bridge replays its
+        # own subscriptions on reconnect, so re-subscribing would register a
+        # second forwarder and double every message. Checking per topic, rather
+        # than all-or-nothing, also heals a connect that dropped mid-loop.
         for topic in WATCHED_TOPICS:
+            if topic in bridge.subscriptions:
+                continue
             try:
                 await bridge.subscribe(topic)
             except BridgeError:
-                # The subscribe raced the connection; the next "connected"
-                # state re-runs this.
+                # The socket dropped; the next "connected" state resumes here.
                 logger.debug("subscribe to %s raced the connection", topic)
                 return
+        self._start_resync()
+
+    def _start_resync(self) -> None:
+        """Ask for the current state until an answer arrives.
+
+        A client can connect before the voice module has subscribed (the remote
+        bus starts before the modules, so a frontend reconnecting during an
+        assistant restart lands in that window). The request is then dropped
+        with no reply. Retry on the draw tick until the base state leaves
+        ``connecting``; a live assistant answers on the first request.
+        """
+        if self._loop is None or self._resync_task is not None:
+            return
+        self._resync_task = self._loop.create_task(self._resync_loop())
+
+    async def _resync_loop(self) -> None:
+        try:
+            for _ in range(tokens.RESYNC_ATTEMPTS):
+                if self._stop:
+                    return
+                await self._publish(topics.VOICE_STATE_REQUEST, {})
+                await self._publish(topics.STATUS_HARNESS_REQUEST, {})
+                await asyncio.sleep(tokens.RESYNC_INTERVAL_S)
+                if self.ui.base_state != tokens.BRIDGE_CONNECTING:
+                    return
+        finally:
+            self._resync_task = None
 
     async def _publish(self, topic: str, payload: dict) -> None:
         try:
@@ -290,6 +324,11 @@ class TuiApp:
             # specifies while an external SIGINT/SIGTERM still stops the app.
             curses.raw()
             screen.keypad(True)
+            # Mouse: the control bar is clickable, not only keyboard-driven.
+            try:
+                curses.mousemask(curses.BUTTON1_CLICKED | curses.BUTTON1_PRESSED)
+            except curses.error:
+                logger.debug("mouse unavailable; buttons stay keyboard-only")
             # A short read timeout lets curses assemble an escape sequence (an
             # arrow key is ESC + two bytes) before it is mistaken for a bare Esc.
             screen.timeout(tokens.INPUT_TIMEOUT_MS)
@@ -322,9 +361,30 @@ class TuiApp:
             if self._stop:
                 break
 
+    def _handle_mouse(self) -> None:
+        """Dispatch a click on a control-bar button.
+
+        A click reports the screen cell; the renderer owns the hitboxes because
+        it drew the labels, so the app asks it which action, if any, was hit.
+        """
+        try:
+            _id, x, y, _z, bstate = curses.getmouse()
+        except curses.error:
+            return
+        if not bstate & curses.BUTTON1_CLICKED and not bstate & curses.BUTTON1_PRESSED:
+            return
+        action = self.renderer.button_at(y, x)
+        if action == "stop":
+            asyncio.ensure_future(self._publish(topics.COMMAND_AGENT_INTERRUPT, {}))
+        elif action == "mute":
+            self._toggle_mute()
+
     def _handle_key(self, key: int) -> None:
         if key == tokens.CTRL_D:
             self._stop = True
+            return
+        if key == curses.KEY_MOUSE:
+            self._handle_mouse()
             return
         if key == tokens.CTRL_C:
             return  # The app owns Ctrl+C; it is not quit (layout.md § Composer).

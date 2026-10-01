@@ -22,3 +22,4 @@ evidence that forced the choice.
 | [ADR-0015](ADR-0015-docs-first.md) | Design docs are the gate before implementation | accepted |
 | ADR-0016 | Resolve an external harness's paths independent of the CWD | withdrawn 2026-09-27 (external harness removed) |
 | [ADR-0017](ADR-0017-frontend-selection-tui.md) | One frontend selection (`gui\|tui\|none\|auto`); the TUI orb is a separate process | accepted |
+| [ADR-0018](ADR-0018-audio-pipeline-stages.md) | The voice pipeline as explicit stages, one factory per stage; drop `halasr` | proposed |

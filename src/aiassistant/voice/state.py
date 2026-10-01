@@ -10,6 +10,7 @@ the system in a state no consumer expects.
 """
 
 from enum import Enum
+from threading import Lock
 
 
 class VoiceState(str, Enum):
@@ -69,37 +70,48 @@ class VoiceStateMachine:
 
     A transition to the current state is a no-op, not an error: publishers are
     allowed to be idempotent.
+
+    The lock matters: the ASR worker and the event loop both transition. Without
+    it, a check-then-set race lets two threads pass ``can_transition`` and one
+    clobber the other, and a caller can observe a state between the check and
+    the write.
     """
 
     def __init__(self, on_change=None):
         self._state = VoiceState.IDLE
         self._on_change = on_change
+        self._lock = Lock()
 
     @property
     def state(self) -> VoiceState:
-        return self._state
+        with self._lock:
+            return self._state
 
     @property
     def is_playing(self) -> bool:
-        return self._state is VoiceState.SPEAKING
+        return self.state is VoiceState.SPEAKING
 
     @property
     def mic_should_be_live(self) -> bool:
         """Half-duplex: the mic is live except while speaking or muted."""
-        return self._state not in (VoiceState.SPEAKING, VoiceState.MUTED)
+        return self.state not in (VoiceState.SPEAKING, VoiceState.MUTED)
 
     def can_transition(self, target: VoiceState) -> bool:
-        if target is self._state:
-            return True
-        return target in _ALLOWED[self._state]
+        with self._lock:
+            if target is self._state:
+                return True
+            return target in _ALLOWED[self._state]
 
     def transition(self, target: VoiceState) -> bool:
         """Move to ``target``. Returns True when the state actually changed."""
-        if target is self._state:
-            return False
-        if not self.can_transition(target):
-            raise InvalidTransition(self._state, target)
-        previous, self._state = self._state, target
+        with self._lock:
+            if target is self._state:
+                return False
+            if target not in _ALLOWED[self._state]:
+                raise InvalidTransition(self._state, target)
+            previous, self._state = self._state, target
+        # The change callback runs outside the lock: it publishes and can call
+        # back into this machine. Holding the lock across it would deadlock.
         if self._on_change:
             self._on_change(previous, target)
         return True

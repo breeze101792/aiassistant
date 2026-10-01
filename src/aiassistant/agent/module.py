@@ -72,6 +72,10 @@ class AgentModule(BaseModule):
         # State
         self._pending_tool_requests: dict[str, asyncio.Future] = {}
         self._running = False
+        # The current session's turns, in order. Context is built from this,
+        # not from disk, so every run starts a fresh conversation instead of
+        # replaying previous sessions (REQ-CONV-010).
+        self._session_turns: list[dict] = []
         # The active turn. Retaining this handle is what makes interrupt and
         # shutdown able to cancel work in flight; it used to be dropped.
         self._turn_task: asyncio.Task | None = None
@@ -168,6 +172,7 @@ class AgentModule(BaseModule):
         self.bus.subscribe(
             topics.AGENT_TRANSCRIPT_SNAPSHOT + ".request", self._handle_snapshot_request,
         )
+        self.bus.subscribe(topics.STATUS_HARNESS_REQUEST, self._handle_harness_request)
 
         logger.info("Agent started — listening for input")
 
@@ -191,22 +196,34 @@ class AgentModule(BaseModule):
     async def _handle_snapshot_request(self, topic: str, payload: dict) -> None:
         """Serve a transcript snapshot so the orb can resync after a gap.
 
-        Rebuilt from the transcript store rather than an in-memory buffer, so it
-        works after a reconnect in a fresh orb process.
+        Rebuilt from the current session, so a reconnecting client sees the
+        conversation it is actually in, not previous runs.
         """
-        try:
-            turns = await self._run_blocking(self.memory.get_recent_turns, 50)
-        except Exception:
-            logger.debug("snapshot read failed", exc_info=True)
-            turns = []
         self.bus.publish(topics.AGENT_TRANSCRIPT_SNAPSHOT, {
             "transcript": [
                 {"role": t.get("speaker", "assistant"),
                  "text": t.get("content", ""),
                  "streaming": False}
-                for t in turns
+                for t in self._session_turns
             ],
         })
+
+    async def _handle_harness_request(self, topic: str, payload: dict) -> None:
+        """Republish the harness badge for a late-connecting client.
+
+        Not every harness owns a provider, so the model is best-effort.
+        """
+        harness = self.harness
+        if harness is None:
+            return
+        provider = getattr(harness, "provider", None)
+        model = getattr(provider, "model", "") if provider is not None else ""
+        try:
+            self.bus.publish(topics.STATUS_HARNESS, {
+                "harness": harness.name, "model": model,
+            })
+        except Exception:
+            logger.debug("harness badge reply failed", exc_info=True)
 
     async def interrupt(self) -> None:
         """Cancel the active turn, if any. Safe to call at any time.
@@ -494,6 +511,7 @@ class AgentModule(BaseModule):
     async def _record_user_turn(self, text: str) -> None:
         now = datetime.now(timezone.utc)
         self.responder.save_turn("user", text)
+        self._session_turns.append({"speaker": "user", "content": text})
         try:
             await self._run_blocking(
                 self.embeddings.index_conversation_turn,
@@ -518,7 +536,9 @@ class AgentModule(BaseModule):
 
     async def _assemble_memory_context(self, query: str) -> str:
         parts = []
-        recent = self.memory.get_recent_turns(self.context_recent_messages)
+        # Only the current session, so a restart is a fresh conversation. The
+        # turns are still persisted to disk by save_turn for later inspection.
+        recent = self._session_turns[-self.context_recent_messages:]
         if recent:
             lines = [f"{t['speaker']}: {t['content'][:200]}" for t in recent[-10:]]
             parts.append("Recent conversation:\n" + "\n".join(lines))
@@ -594,6 +614,8 @@ class AgentModule(BaseModule):
         self.responder.save_turn("assistant", response["text"],
                                  thinking=response.get("thinking"),
                                  tools_used=tools_used)
+        self._session_turns.append({"speaker": "assistant",
+                                    "content": response["text"]})
         try:
             await self._run_blocking(
                 self.embeddings.index_conversation_turn,

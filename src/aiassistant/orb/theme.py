@@ -37,6 +37,12 @@ FPS_ACTIVE = 60
 FPS_IDLE = 30
 FPS_HIDDEN = 0
 
+# Connect-time state resync: keep asking until a reply arrives, so a client that
+# connects before the voice module (assistant restart) is not left on
+# "connecting". The retry stops early on the first reply.
+RESYNC_ATTEMPTS = 20
+RESYNC_INTERVAL_S = 0.5
+
 # Geometry
 ORB_COMPACT_SIZE = 180
 ORB_EXPANDED_SIZE = 260

@@ -43,11 +43,27 @@ INPUT_BATCH = 32
 # bare Esc. Small enough not to stall the loop, long enough for arrow keys.
 INPUT_TIMEOUT_MS = 25
 
+# Clickable control-bar buttons. Each is a fixed label so its hitbox is known
+# without measuring; the renderer records the columns it drew them at.
+BUTTON_STOP = "[ stop ]"
+BUTTON_MUTE = "[ mute ]"
+BUTTON_UNMUTE = "[ unmute ]"
+BUTTON_GAP = "  "
+
 # Sentinels for "scrolled to the very top" and "pinned to the newest".
 SCROLL_MAX = 10 ** 9
 
 # The bridge reports this state when the socket is up.
 BRIDGE_CONNECTED = "connected"
+
+# The base state before the first voice.state arrives; the resync retry stops
+# once it changes.
+BRIDGE_CONNECTING = "connecting"
+
+# Connect-time state resync: keep asking until a reply arrives, so a client that
+# connects before the voice module (assistant restart) is not left stuck.
+RESYNC_ATTEMPTS = 20
+RESYNC_INTERVAL_S = 0.5
 
 # ── Identity and badge defaults ──────────────────────────────
 DEFAULT_IDENTITY = "Jarvis"

@@ -137,7 +137,7 @@ this section fixes which topics and payloads it uses.
 
 | Topic | Payload | Rate | Drives |
 | --- | --- | --- | --- |
-| `voice.state` | `state` enum | On change | Base state and color |
+| `voice.state` | `state` enum | On change **and on request** | Base state and color |
 | `voice.level` | `{level, source, ts}` | ≤ 20 Hz, latest-wins | Pulse amplitude |
 | `agent.delta` | `{kind, text, index}` | Stream rate, coalesced ≤ 20 Hz | Streaming transcript |
 | `agent.tool.event` | `{call_id, name, status, args, result, duration_ms, source}` | Per tool lifecycle step | Tool activity rows |
@@ -145,7 +145,13 @@ this section fixes which topics and payloads it uses.
 | `agent.turn.error` | `{message, class, hint, code}` | Once per failed turn | Error state |
 | `voice.overflow` | `{dropped, queue_cap}` | On overflow | Warning badge |
 | `status.assistant.ready` | `{}` | Once at startup | Window appears |
-| `status.harness` | `{harness, model}` | On change | Backend badge |
+| `status.harness` | `{harness, model}` | On change **and on request** | Backend badge |
+
+`voice.state` and `status.harness` are edge-triggered, so a client that connects
+after the last event would not see them. On every bridge connect the orb and tui
+publish `voice.state.request` and `status.harness.request`; the voice module and
+the agent reply on the event topic with the current value. See
+[schemas.md](schemas.md#voice_state_request).
 
 `agent.tool.event` exists because tool activity needs its own channel:
 `agent.delta.kind` covers only `text` and `thinking`, so without this topic tool
@@ -158,6 +164,8 @@ rows could not render. It is display-only.
 | `user.input.text` | `{text, channel:"orb"}` | Per submission |
 | `command.agent.interrupt` | `{}` | Per user interrupt |
 | `command.voice.mute` | `{muted: bool}` | Per toggle |
+| `voice.state.request` | `{}` | Once per bridge connect |
+| `status.harness.request` | `{}` | Once per bridge connect |
 | `command.assistant.shutdown` | `{}` | Per `/exit` from a frontend |
 | `command.frontend.open` | `{kind: "tui" \| "gui"}` | Per `/tui` or `/gui` |
 
@@ -189,14 +197,22 @@ lifecycle without ever putting PCM on the bus.
 | `speaking` | Playback active |
 | `error` | A classified error is showing |
 | `muted` | Capture stopped by the user |
+| `listening` | Capture live; in wake mode, the follow-up window is open |
 
 Allowed transitions (`features/voice-pipeline.md:65-69`):
 
 ```
-IDLE ──> LISTENING ──> TRANSCRIBING ──> THINKING ──> SPEAKING ──> LISTENING
+IDLE ──> LISTENING ──> TRANSCRIBING ──> THINKING ──> SPEAKING ──> IDLE
              ^                                │            │
              └──────────── interrupt / error ─┴────────────┘
 ```
+
+`SPEAKING` mutes the capture (half-duplex, ADR-0011) and returns to `IDLE` when
+playback ends, which restores the mic. That transient mute is not the user mute:
+`MUTED` is only entered by `command.voice.mute`, and only a user mute keeps the
+capture closed. In wake mode the wake phrase opens a follow-up window
+(`voice.wake_window_ms`); utterances inside it need no phrase, and the window
+closes after that much quiet. See `features/voice-pipeline.md`.
 
 Impossible combinations (e.g. listening while speaking) are rejected by the
 single state machine (`features/voice-pipeline.md:71-74`).
@@ -210,7 +226,7 @@ single state machine (`features/voice-pipeline.md:71-74`).
 | `voice.tts.started` | `{text}` | Per synthesis | Replaces `status.mouth.started` (`modules/mouth/mouth.py:73`) |
 | `voice.tts.done` | `{text, interrupted}` | Per utterance | Replaces `status.mouth.done` (`modules/mouth/mouth.py:81`) |
 | `voice.tts.error` | `{error}` | On failure | Replaces `status.mouth.error` (`modules/mouth/mouth.py:80`) |
-| `voice.overflow` | `{}` | On queue drop | Segment queue cap 2, drop-oldest (`voice.md:74-75`) |
+| `voice.overflow` | `{dropped, queue_cap}` | On queue drop | Published by `_on_utterance`; segment queue cap 2, drop-oldest (as-built) |
 
 `confidence` and `language` are target fields and **unverified** against the
 current ASR backends.
@@ -234,11 +250,13 @@ a participant.
 | Target sample rate | 16 kHz mono | `features/voice-pipeline.md:33` |
 | Raw PCM on the bus | **Never**. Events only | `features/voice-pipeline.md:30-33`, REQ-VOICE-006 |
 | Why not the bus | `bus.publish` is a synchronous dict fan-out with no bounded latency (`bus/bus.py:44`) | `architecture/overview.md:138-139` |
-| Segment queue | Bounded, cap 2, drop-**oldest** on overflow; publish `voice.overflow` | `voice.md:74-75`, `voice.md:104` |
+| VAD | One `VADBackend.is_speech` verdict per 20 ms frame; `energy` default, `webrtc` optional | `voice/vad.py` |
+| Segmenter memory bound | Pre-roll (default 200 ms) plus at most `max_utterance_ms` (default 30 s) of buffered speech; a stuck VAD force-emits at the cap | `voice/segmenter.py` |
+| Segment queue | Bounded, cap 2, drop-**oldest** on overflow; `put` non-blocking, `get` blocking; publishes `voice.overflow` | `voice/audio.py` |
 | PCM (playback) queue | Bounded; **exact cap unverified** | `voice.md:104` |
 | RMS publish cadence | ≤ 20 Hz, latest-wins | `features/voice-pipeline.md:45` |
 | VAD verdicts | Audio plane only | `architecture/overview.md:135-136` |
-| Playback interrupt | Stop flag checked in the audio callback, drains silence at the next buffer | `voice.md:45-49` |
+| Playback interrupt | Stop flag checked in the audio callback, drains silence at the next buffer; per-utterance, cleared by the next `enqueue` | `voice.md:45-49` |
 
 Raw PCM crosses only the capture/playback callback boundary; the bus carries
 state, transcripts, and level samples.
@@ -294,7 +312,9 @@ as-built strings for now. Every other listed rename adopts its new value.
 | `COMMAND_VOICE_MUTE` | `command.voice.mute` | orb |
 | `COMMAND_VOICE_PTT_START` | `command.voice.ptt.start` | orb, hotkey |
 | `COMMAND_VOICE_PTT_END` | `command.voice.ptt.end` | orb, hotkey |
-| `STATUS_HARNESS` | `status.harness` | `agent` |
+| `STATUS_HARNESS` | `status.harness` | `agent` — **resync on connect** |
+| `VOICE_STATE_REQUEST` | `voice.state.request` | orb, tui — connect-time resync |
+| `STATUS_HARNESS_REQUEST` | `status.harness.request` | orb, tui — connect-time resync |
 
 ### Complete constant list
 
@@ -304,9 +324,9 @@ as-built strings for now. Every other listed rename adopts its new value.
 | Agent out | `AGENT_DELTA`=`agent.delta`, `AGENT_FINAL`=`agent.final`, `AGENT_TURN_ERROR`=`agent.turn.error` (new) |
 | Agent RPC | `AGENT_ASK`=`agent.ask` (renamed from `brain.ask`) |
 | Tools | `TOOL_EXECUTE`=`tool.execute`, `STATUS_TOOL_DONE`=`status.tool.done`, `STATUS_TOOL_ERROR`=`status.tool.error`, `STATUS_TOOLS_READY`=`status.tools.ready` |
-| Voice | `VOICE_STATE`=`voice.state`, `VOICE_LEVEL`=`voice.level`, `VOICE_TRANSCRIBED`=`voice.transcribed`, `VOICE_SPEAK`=`voice.speak`, `VOICE_TTS_STARTED`/`VOICE_TTS_DONE`/`VOICE_TTS_ERROR`/`VOICE_TTS_READY`=`voice.tts.*`, `VOICE_OVERFLOW`=`voice.overflow` |
+| Voice | `VOICE_STATE`=`voice.state`, `VOICE_LEVEL`=`voice.level`, `VOICE_TRANSCRIBED`=`voice.transcribed`, `VOICE_SPEAK`=`voice.speak`, `VOICE_TTS_STARTED`/`VOICE_TTS_DONE`/`VOICE_TTS_ERROR`/`VOICE_TTS_READY`=`voice.tts.*`, `VOICE_OVERFLOW`=`voice.overflow`, `VOICE_STATE_REQUEST`=`voice.state.request` (new) |
 | Commands | `COMMAND_AGENT_INTERRUPT`=`command.agent.interrupt`, `COMMAND_ASSISTANT_SHUTDOWN`=`command.assistant.shutdown` (new), `COMMAND_FRONTEND_OPEN`=`command.frontend.open` (new), `COMMAND_VOICE_MUTE`=`command.voice.mute` (new) |
-| Status | `status.assistant.ready` (`main.py:167`), `STATUS_HARNESS`=`status.harness` (new) |
+| Status | `status.assistant.ready` (`main.py:167`), `STATUS_HARNESS`=`status.harness` (new), `STATUS_HARNESS_REQUEST`=`status.harness.request` (new) |
 | Schedule | `schedule.triggered` (`scheduler.py:92`), `action.schedule.add/list/delete` (`scheduler.py:33-35`), `status.schedule.added/list/deleted` (`scheduler.py:65-74`), `status.scheduler.error` (`scheduler.py:54`) |
 | Module lifecycle | `bus.module.connected` (`remote.py:74`), `bus.module.disconnected` (`remote.py:101`, `main.py:160`) |
 | Frozen (vision/messaging) | `sensory.vision.frame` (`eyes.py:60`), `eyes.analyze` (`eyes.py:41`), `status.eyes.ready` (`eyes.py:42`), `sensory.speech.*` superseded by voice topics; values frozen |
@@ -354,6 +374,10 @@ The ordered cancel sequence; **order matters**
 | 5 | `voice` | Clears the TTS queue; unmutes the mic |
 | 6 | `agent` | Ends the turn with `turn_done(cancelled=true)`; **no** `agent.final` |
 | 7 | — | `voice.state: idle` |
+
+The stop flag is per-utterance, not per-session: the next `enqueue` clears it, so
+the reply after an interrupt is audible. Only the interrupted utterance is
+silenced (REQ-WAKE-005).
 
 | Condition | Behavior |
 | --- | --- |

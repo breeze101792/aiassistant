@@ -38,7 +38,7 @@ class MessageBus:
 
         Thread-safe: can be called from any thread. Async callbacks are scheduled
         on the main event loop via run_coroutine_threadsafe when called from
-        a non-asyncio thread (e.g. HalASR daemon thread).
+        a non-asyncio thread (e.g. the voice ASR worker thread).
         """
         payload = payload or {}
         for sub_id, callback in list(self._subscribers.get(topic, {}).items()):

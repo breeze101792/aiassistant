@@ -37,6 +37,8 @@ process.
 - `bridge.connect`, `subscribe`, `publish`
 - Topics: `voice.state`, `voice.level`, `agent.delta`, `agent.final`,
   `agent.turn.error`, `status.assistant.ready`, `status.harness`
+- Publishes `voice.state.request` and `status.harness.request` once per connect,
+  so the base state and badge do not depend on a live edge event
 
 ## OWNS
 

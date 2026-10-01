@@ -34,7 +34,12 @@ The GUI orb's watch set (`orb/app.py:30-39`), from `bus/topics.py`:
 ### Publishes
 
 `user.input.text {text, channel: "tui"}` · `command.agent.interrupt` ·
-`command.voice.mute` · `agent.transcript.snapshot.request`.
+`command.voice.mute` · `agent.transcript.snapshot.request` ·
+`voice.state.request` · `status.harness.request`.
+
+The two resync requests are published once per bridge connect, so the base state
+and the harness badge do not depend on catching a live `voice.state` /
+`status.harness` event.
 
 ### Internal components
 

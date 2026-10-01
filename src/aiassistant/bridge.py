@@ -75,6 +75,13 @@ class Bridge:
         except asyncio.TimeoutError:
             logger.debug("no register reply within %.0fs; continuing", AUTH_TIMEOUT_S)
 
+        # Replay subscriptions BEFORE announcing "connected": a client may
+        # publish a request as soon as it sees "connected", and the reply would
+        # race the forwarder registration on reconnect. "connected" now means
+        # "your subscriptions are live; publishing is safe."
+        for topic in list(self._subscriptions):
+            await self._send({"action": "subscribe", "topic": topic},
+                             require_connection=False)
         self._notify_state("connected")
         logger.info("bridge connected to %s as %s", self.url, self.name)
 
@@ -119,9 +126,6 @@ class Bridge:
             try:
                 if self._ws is None:
                     await self.connect()
-                    for topic in list(self._subscriptions):
-                        await self._send({"action": "subscribe", "topic": topic},
-                                         require_connection=False)
                     attempt = 0
 
                 message = await self._ws.recv()

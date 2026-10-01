@@ -39,27 +39,51 @@ class SegmentQueue:
     Drops the OLDEST on overflow and counts the drop, because a stale segment is
     worse than a missing one: transcribing speech from ten seconds ago produces
     a confusing turn.
+
+    ``put`` is non-blocking so it is safe on the audio callback thread; ``get``
+    blocks so the ASR worker can wait instead of polling; ``close`` wakes that
+    waiter so shutdown is prompt.
     """
 
     def __init__(self, cap: int = SEGMENT_QUEUE_CAP):
         self.cap = cap
         self._items: deque = deque()
+        self._closed = False
         self._lock = threading.Lock()
+        self._not_empty = threading.Condition(self._lock)
         self.dropped = 0
 
     def put(self, item) -> bool:
         """Enqueue. Returns False when an older item was dropped."""
-        with self._lock:
+        with self._not_empty:
             self._items.append(item)
             overflowed = len(self._items) > self.cap
             if overflowed:
                 self._items.popleft()
                 self.dropped += 1
+            self._not_empty.notify()
             return not overflowed
 
-    def get(self):
-        with self._lock:
+    def get(self, timeout: float | None = None):
+        """Pop the oldest item, blocking until one arrives.
+
+        Returns None on timeout or after ``close``.
+        """
+        with self._not_empty:
+            if not self._items and not self._closed:
+                self._not_empty.wait(timeout)
             return self._items.popleft() if self._items else None
+
+    def close(self) -> None:
+        """Wake any waiter and refuse further work. A later put is still safe."""
+        with self._not_empty:
+            self._closed = True
+            self._not_empty.notify_all()
+
+    @property
+    def closed(self) -> bool:
+        with self._lock:
+            return self._closed
 
     def __len__(self) -> int:
         with self._lock:
@@ -124,9 +148,15 @@ class Playback:
     # ── Queue ────────────────────────────────────────────────
 
     def enqueue(self, pcm: bytes) -> None:
-        """Add PCM for playback, dropping the oldest audio on overflow."""
+        """Add PCM for playback, dropping the oldest audio on overflow.
+
+        Clears the stop latch: ``stop_now`` silences the current utterance, and
+        a later ``enqueue`` is a new utterance that must play. Without this, one
+        interrupt would silence the output stream for the rest of the session.
+        """
         if not pcm:
             return
+        self._stop.clear()
         with self._lock:
             self._frames.append(pcm)
             while len(self._frames) > PLAYBACK_QUEUE_FRAMES:

@@ -14,9 +14,13 @@ dependencies = [
     "ollama>=0.4",
     "openai>=1.0",
     "tiktoken>=0.5",
+    # Audio and the ASR backends operate on numpy arrays. It is not pulled in
+    # transitively: sounddevice and openai both put it behind an extra of their
+    # own, so leaving it out made `./start.sh test` and every real ASR backend
+    # fail on a fresh venv.
+    "numpy>=1.24",
     "sounddevice>=0.4",
     "miniaudio>=1.59",
-    "webrtcvad>=2.0",
     "edge-tts>=6.0",
     "tzlocal>=5.0",
 ]
@@ -24,6 +28,10 @@ dependencies = [
 [project.optional-dependencies]
 # ASR is heavy and installed separately by choice.
 asr = ["openai-whisper", "funasr"]
+# Offline ASR: pip-installable, no torch, works on mac and linux.
+asr-offline = ["faster-whisper>=1.0"]
+# WebRTC VAD is optional; the energy VAD is the dependency-free default.
+vad = ["webrtcvad>=2.0"]
 tools = ["duckduckgo-search>=6.0", "beautifulsoup4>=4.12"]
 ui = ["PySide6>=6.6"]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]

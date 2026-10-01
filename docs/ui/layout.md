@@ -105,7 +105,7 @@ Full row spec: [components/transcript.md](components/transcript.md).
 | Monotonic index | Fragments are keyed by `index`; an out-of-order fragment triggers a resync request rather than a silent hole ([components/transcript.md](components/transcript.md#deltas-and-resync)) |
 | `agent.final` | Replaces the assembled delta text for the turn; usage is shown as a `typeMono` footer |
 | Scrollback | Bounded to `Theme.transcriptMaxTurns` = `500` **PLACEHOLDER** [200–2000] rows; oldest evicted. Persistence is the memory store's job (REQ-CONV-004), not the view's |
-| Empty state | "No messages yet. Say *hi jarvis* or type below." centered, `colorTextMuted`, `typeBody` |
+| Empty state | "No messages yet. Say \"<first hotword>\" or type below." centered, `colorTextMuted`, `typeBody`. The phrase comes from `voice.hotwords`, not a literal |
 
 ### Autoscroll
 

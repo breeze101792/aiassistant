@@ -200,6 +200,13 @@ class Renderer:
         self._colors = False
         self._bg = -1
         self._state_color: tuple[str, int] | None = None
+        # Hitboxes for the clickable control-bar buttons, as
+        # (row, col_start, col_end, action). The app maps a mouse click to an
+        # action through this; the renderer owns it because it knows where the
+        # labels were drawn.
+        self.button_hitboxes: list[tuple[int, int, int, str]] = []
+        # The renderer may ask the app to run a click action; the app sets this.
+        self.on_button = None
 
     # ── Setup ────────────────────────────────────────────────
 
@@ -323,6 +330,7 @@ class Renderer:
         self._draw_rule(win, row_rule_low, cols)
         self._draw_composer(win, ui, row_composer, cols)
         self._draw_status(win, model, ui, row_status, cols)
+        self._draw_buttons(win, model, ui, row_meter, cols)
         if ui.help_open:
             self._draw_help(win, rows, cols)
 
@@ -446,10 +454,20 @@ class Renderer:
                        ATTR_SECONDARY)
 
     def _draw_empty(self, win, top: int, height: int, cols: int) -> None:
-        text = 'No messages yet. Say "hi jarvis" or type below.'
+        text = self._empty_text()
         row = top + max(0, (height - 1) // 2)
         col = max(0, (cols - len(text)) // 2)
         self._safe(win, row, col, text, self._pair(tokens.CP_DIM, ATTR_SECONDARY))
+
+    def _empty_text(self) -> str:
+        """Empty-state hint naming the configured wake phrase, never a literal.
+
+        The phrase is user config, so a hard-coded one tells the user to say
+        something the pipeline does not listen for.
+        """
+        if self.hotwords:
+            return f'No messages yet. Say "{self.hotwords[0]}" or type below.'
+        return "No messages yet. Type below."
 
     def _draw_meter(self, win, model, ui: UIState, row: int, cols: int) -> None:
         state = ui.display_state(model)
@@ -555,11 +573,57 @@ class Renderer:
         self._safe(win, row, right_col, right,
                    self._pair(tokens.CP_DIM, ATTR_SECONDARY))
 
+    def _buttons(self, model, ui: UIState) -> list[tuple[str, str]]:
+        """The clickable controls for the current state, as (label, action)."""
+        muted = ui.display_state(model) == "muted"
+        buttons = [("stop", tokens.BUTTON_STOP)]
+        buttons.append(("mute", tokens.BUTTON_UNMUTE if muted
+                        else tokens.BUTTON_MUTE))
+        return buttons
+
+    def _draw_buttons(self, win, model, ui: UIState, row: int, cols: int) -> None:
+        """Draw the control bar right-aligned and record each label's hitbox.
+
+        Only shown when the terminal is wide enough that the labels cannot
+        collide with the level meter; the keyboard equivalents stay in the
+        status row either way.
+        """
+        self.button_hitboxes = []
+        if cols < tokens.WIDE_COLS:
+            return
+        parts = self._buttons(model, ui)
+        width = sum(len(label) for _, label in parts) \
+            + len(tokens.BUTTON_GAP) * (len(parts) - 1)
+        start = max(0, cols - width)
+        if start < tokens.COL_METER_BAR_WIDE + tokens.COL_METER_SOURCE + 12:
+            return  # too close to the meter
+        col = start
+        for action, label in parts:
+            if col + len(label) > cols:
+                break
+            attr = self._pair(tokens.CP_ACCENT) if action == "stop" \
+                else self._pair(tokens.CP_STATE)
+            if action == "stop":
+                attr |= curses.A_BOLD
+            self._safe(win, row, col, label, attr)
+            self.button_hitboxes.append((row, col, col + len(label), action))
+            col += len(label)
+            if col < cols:
+                col += len(tokens.BUTTON_GAP)
+
+    def button_at(self, row: int, col: int) -> str:
+        """The action for a click at (row, col), or "" for none."""
+        for btn_row, start, end, action in self.button_hitboxes:
+            if row == btn_row and start <= col < end:
+                return action
+        return ""
+
     HELP_LINES = (
         "F1, Esc     close this help",
         "Ctrl+D      close the TUI only (assistant keeps running)",
         "Enter       send the composer",
         "Esc         close help / clear input / interrupt",
+        "Click       the [ stop ] / [ mute ] buttons on the meter row",
         "Ctrl+T      toggle mute",
         "Ctrl+.      interrupt a turn",
         "Ctrl+L      clear the transcript view",

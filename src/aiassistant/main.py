@@ -12,7 +12,10 @@ Options:
   --frontend SHELL    Visual shell: gui | tui | none | auto (default: auto).
                       auto uses gui when a display is available, none otherwise.
                       Text and audio always run; none means text only.
-  --audio             Use the voice backends (speech in and out)
+  --audio             Voice via a self-hosted Whisper server on your LAN
+                      (no api key), TTS via edge-tts.
+  --offline           Fully offline voice: local faster-whisper ASR, text TTS.
+                      Mutually exclusive with --audio.
   -h, --help          Show this help and exit
 
 Examples:
@@ -20,7 +23,8 @@ Examples:
   ./start.sh -c config.yaml         # apply your local overrides
   ./start.sh --frontend none        # text only
   ./start.sh --frontend tui         # terminal orb
-  ./start.sh --audio                # voice in and out
+  ./start.sh --audio                # voice via a self-hosted Whisper server
+  ./start.sh --offline              # fully offline voice in and out
   ./start.sh -v                     # debug logging
 
 Environment:
@@ -34,7 +38,7 @@ Config:
 
   Key sections:
     agent        — persona, model provider, memory, embeddings
-    voice        — speech in and out (stub/whisper/funasr/halasr + text/edge_tts)
+    voice        — speech in and out: vad, segmenter, asr, tts (per-stage backends)
     tools        — tool packages, sandbox, timeout
     scheduler    — timed tasks
     console      — terminal interface
@@ -481,7 +485,9 @@ def parse_args():
                                            "gui", "none", "auto"), default=None,
                         help=argparse.SUPPRESS)  # deprecated alias for --frontend
     parser.add_argument("--audio", action="store_true",
-                        help="Use the voice backends (speech in and out)")
+                        help="Self-hosted LAN Whisper ASR (no api key), edge-tts")
+    parser.add_argument("--offline", action="store_true",
+                        help="Offline voice preset (faster-whisper ASR, text TTS)")
     parser.add_argument("-h", "--help", action="store_true",
                         help="Show help message and exit")
     return parser
@@ -516,10 +522,19 @@ async def main():
         logger.warning("--mode is deprecated; use --frontend")
         requested = None if args.mode == "audio" else args.mode
 
+    self_hosted = args.audio or args.mode == "audio"
+    if self_hosted and args.offline:
+        parser.error("--audio and --offline are mutually exclusive")
+
     overrides = {}
-    if args.audio or args.mode == "audio":
-        overrides["voice.backend"] = "halasr"
+    if self_hosted:
+        # The self-hosted preset is a documented value set materialized into
+        # per-stage keys; there is no separate "preset" switch (ADR-0018).
+        overrides["voice.asr.backend"] = "whisper_server"
         overrides["voice.tts.backend"] = "edge_tts"
+    elif args.offline:
+        overrides["voice.asr.backend"] = "faster_whisper"
+        overrides["voice.tts.backend"] = "text"
 
     runner = AssistantRunner(
         args.config,

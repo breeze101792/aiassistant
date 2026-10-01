@@ -28,9 +28,10 @@ Today three names overlap:
 | CLI `--mode` | `main.py:282-284` | `console`, `audio`, `ui`, `auto` | Display choice **and** a voice preset. |
 | `AIASSISTANT_DISPLAY_OFF` | `config.py:29-31` | set/unset | Force console. |
 
-`--mode audio` only sets voice backends (`main.py:316-318`: `voice.backend=halasr`,
-`voice.tts.backend=edge_tts`) and leaves the display unresolved; it is not a
-display mode. `--mode ui` maps to `display_choice=orb` (`main.py:320-327`).
+`--mode audio` only sets voice backends (the self-hosted preset,
+`voice.asr.backend=whisper_server` and `voice.tts.backend=edge_tts`, ADR-0018)
+and leaves the display unresolved; it is not a display mode. `--mode ui` maps
+to `display_choice=orb`.
 
 ### 1.1 One concept: the frontend
 
@@ -60,10 +61,9 @@ existing configs keep working.
   Alias mapping: `ui → gui`, `console → console`, `auto → auto`, and
   `audio →` the `--audio` behavior with **no** frontend choice.
 - **`audio` leaves the frontend enum.** It is a voice concern, not a display
-  concern. Keep the `--audio` flag (`main.py:285`) for the backend override at
-  `main.py:316-318`; recommend documenting the same override as config
-  (`voice.backend`, `voice.tts.backend`). `--mode audio` becomes a deprecated
-  alias for `--audio`.
+  concern. Keep the `--audio` flag for the online-preset override
+  (`voice.asr.backend`, `voice.tts.backend`, ADR-0018); the same override can be
+  written as config. `--mode audio` becomes a deprecated alias for `--audio`.
 
 ### 1.3 Precedence
 
@@ -157,7 +157,9 @@ Keyboard only:
 
 - Not the animated GUI orb: no shader, no window, no always-on-top, no
   transparency, no position persistence.
-- Not mouse-driven; no theming beyond the terminal's own palette.
+- Keyboard-first; a small clickable control bar (`[ stop ]`, `[ mute ]`) is
+  available on wide terminals, but every action has a key. No other mouse
+  behavior; no theming beyond the terminal's own palette.
 - Not a second source of truth: it derives nothing the bus has not published
   (`orb/model.py:5-7`).
 - Not a replacement for the console as the **permanent** fallback
@@ -301,7 +303,7 @@ REQ rows into [requirements.md](../requirements.md) and the rows into
 
 | Item | Why |
 | --- | --- |
-| Mouse input, pane resizing, mouse-driven scrolling | Keyboard-only this round; not requested. |
+| Mouse input beyond the control bar, pane resizing, mouse-driven scrolling | Not requested; the stop/mute buttons are the exception. |
 | Theming, color schemes, configurable layouts | `ui-designer` territory; not a functional need. |
 | Animating the TUI (braille/block orb) | The GUI shader is the animated frontend; the TUI is textual. |
 | Windows support | Project targets macOS and Linux (`scope.md:46`, REQ-PLAT-001). |

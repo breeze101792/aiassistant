@@ -244,3 +244,44 @@ class TestSpeechRouting:
         mod._deliver_response(response, should_speak=True)
         assert len(spoken) == 1
         assert spoken[0]["text"] == "hello"
+
+
+class TestHarnessBadge:
+    """status.harness was documented and subscribed but never published.
+
+    The badge resync replies with the harness name and the reasoning model.
+    """
+
+    def test_harness_request_publishes_badge(self, brain):
+        from types import SimpleNamespace
+
+        bus, mod = brain
+        mod.harness = SimpleNamespace(name="native",
+                                      provider=SimpleNamespace(model="qwen3:latest"))
+        seen = []
+        bus.subscribe(topics.STATUS_HARNESS, lambda t, p: seen.append(p))
+
+        asyncio.run(mod._handle_harness_request(topics.STATUS_HARNESS_REQUEST, {}))
+
+        assert seen == [{"harness": "native", "model": "qwen3:latest"}]
+
+    def test_harness_request_without_a_provider(self, brain):
+        from types import SimpleNamespace
+
+        bus, mod = brain
+        mod.harness = SimpleNamespace(name="native", provider=None)
+        seen = []
+        bus.subscribe(topics.STATUS_HARNESS, lambda t, p: seen.append(p))
+
+        asyncio.run(mod._handle_harness_request(topics.STATUS_HARNESS_REQUEST, {}))
+
+        assert seen == [{"harness": "native", "model": ""}]
+
+    def test_harness_request_before_setup_is_a_noop(self, brain):
+        bus, mod = brain
+        seen = []
+        bus.subscribe(topics.STATUS_HARNESS, lambda t, p: seen.append(p))
+
+        asyncio.run(mod._handle_harness_request(topics.STATUS_HARNESS_REQUEST, {}))
+
+        assert seen == []

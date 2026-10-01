@@ -40,23 +40,28 @@ deadline, and 16 kHz mono PCM is roughly 32 kB/s per subscriber.
 ## Pipeline
 
 ```
-mic ──20 ms frames──> VAD ──segment──> bounded queue (cap 2, drop-oldest)
-                       │
-                       ├─RMS──> voice.level (latest-wins, ≤20 Hz)
-                       │
-                       │ WAV segment
-                       v
-        ASR worker (executor) ──> voice.transcribed ──> user.input.text
-                                                              │
-                                                    agent ──> harness
-                                                              │
-                                       agent.delta ───────────┴── agent.final
-                                            │
-                                            v
-                              TTS chunker ──> edge-tts ──> MP3→PCM ──> PCM queue
-                                                                          │
-                        sounddevice callback ──> speaker  <────────────────┘
+mic ──20 ms frames──> Segmenter (composes VAD) ──utterance──> SegmentQueue (cap 2, drop-oldest)
+                       │  │                                             │
+                       │  └─VAD: energy | webrtc                       │ PCM segment
+                       ├─RMS──> voice.level (latest-wins, ≤20 Hz)      v
+                       │                              ASR worker (thread) ──> voice.transcribed
+                       │                                                              │
+                       │                                                    user.input.text
+                       │                                                              │
+                       │                                                     agent ──> harness
+                       │                                                              │
+                       │                                        agent.delta ──────────┴── agent.final
+                       │                                             │
+                       │                                             v
+                       └───────  TTS chunker ──> edge-tts ──> MP3→PCM ──> PCM queue
+                                                                                   │
+                                                 sounddevice callback ──> speaker <┘
 ```
+
+The mic path is five explicit stages — capture, VAD, segmenter, segment queue,
+ASR worker — each behind one interface and one factory (`voice/factory.py`).
+The segmenter is the stage that did not exist before ADR-0018: nothing called
+`on_utterance`, so the mic produced a level and no transcript.
 
 ## States
 
@@ -74,16 +79,39 @@ as listening while speaking.
 
 ## Backends
 
-| Stage | Interface | Implementations |
-| --- | --- | --- |
-| ASR | `ASRBackend` | whisper, funasr, halasr, stub |
-| TTS | `TTSBackend` | edge_tts, text, stub |
-| Wake | `WakeDetector` | `AsrHotwordDetector` (default), future KWS engine |
-| Capture | `AudioCapture` | sounddevice |
-| Playback | `AudioPlayback` | sounddevice callback stream |
+| Stage | Interface | Implementations | Config |
+| --- | --- | --- | --- |
+| VAD | `VADBackend` (`voice/vad.py`) | `energy` (default), `webrtc` (needs the `vad` extra) | `voice.vad.backend` |
+| Segmenter | `VadSegmenter` (`voice/segmenter.py`) | one implementation, composes the VAD | `voice.segmenter.*` |
+| ASR | `ASRBackend` | `faster_whisper` (offline, default), `whisper_server` (your own server), `whisper`, `funasr`, `stub` | `voice.asr.backend` |
+| TTS | `TTSBackend` | `edge_tts`, `text` | `voice.tts.backend` |
+| Wake | `WakeDetector` | `AsrHotwordDetector` (default), future KWS engine | `voice.listen.mode` |
+| Capture | `Capture` (`voice/audio.py`) | sounddevice | — |
+| Playback | `Playback` (`voice/audio.py`) | sounddevice callback stream | — |
 
 Every backend is selected by config and replaced without touching callers
-(REQ-VOICE-004, REQ-WAKE-003).
+(REQ-VOICE-004, REQ-WAKE-003). The VAD, ASR, and TTS backends are built by
+`voice/factory.py`; an unknown value is a hard error naming the value
+(REQ-BACKEND-002). The wake detector is built by `voice/wake.py`
+(`create_detector`). The fused pre-ADR backend was removed; see ADR-0018.
+
+No ASR backend in this project requires a paid service, and the default
+requires no account. `faster_whisper` runs locally. `whisper_server` targets an
+OpenAI-compatible endpoint you run yourself (for example `whisper.cpp`'s
+`server`); it takes a generic, optional `api_key`, but a self-hosted server
+ignores it, and there is **no built-in hosted endpoint** to point at.
+Provider-specific hosted backends were removed (ADR-0018).
+
+`--audio` writes `voice.asr.backend: whisper_server` +
+`voice.tts.backend: edge_tts` (set `voice.asr.base_url` to your server);
+`--offline` writes `faster_whisper` + `text`. The two are mutually exclusive.
+Presets are value sets materialised into per-stage keys at load time, not a
+separate switch.
+
+`faster_whisper` is offline for audio, but its model is fetched from Hugging
+Face Hub on first use, so that first run needs the network (model weights, not
+audio). After the model is cached, no network is used. `whisper`/`funasr` are
+the older optional extras; the fused `halasr` backend was removed (ADR-0018).
 
 ## Playback
 
@@ -102,18 +130,25 @@ missed in the first draft; it is required, not optional.
 
 ## Wake detection
 
-The default detector matches configured wake phrases against ASR output. This
-reuses the existing hotword path (`halasr.py:187` region) and adds no new
-dependency. The cost is that ASR runs continuously, and detection is only as
-fast as a segment.
+The default detector (`AsrHotwordDetector`, `voice/wake.py`) matches configured
+wake phrases against ASR output. It adds no new dependency. The cost is that ASR
+runs continuously, and detection is only as fast as a segment.
+
+Hearing the phrase opens a **follow-up window** (wake mode): the next utterances
+are accepted without repeating the phrase, so a conversation flows naturally.
+The window is refreshed on each utterance and stays open across a spoken reply;
+it closes after `voice.wake_window_ms` of quiet, after which the phrase is
+required again. An explicit mute also closes it.
 
 A dedicated keyword-spotting engine runs before ASR, at far lower CPU. The
 interface exists so it can be dropped in later; only the detector is replaced.
 
 ## Limitations
 
-Half-duplex. The mic is gated during playback (REQ-VOICE-006). Voice barge-in
-needs acoustic echo cancellation and is deferred; see
+Half-duplex. The mic is gated during playback (REQ-VOICE-006). That gate is
+transient: it is released when playback ends, and it is distinct from the user
+mute (`command.voice.mute`), which is the only thing that leaves the module in
+`muted`. Voice barge-in needs acoustic echo cancellation and is deferred; see
 [ADR-0011](../../architecture/decisions/ADR-0011-half-duplex-first.md). The FSM
 already models the transition, so enabling it later changes one edge.
 
@@ -129,3 +164,4 @@ already models the transition, so enabling it later changes one edge.
 | Wake phrase strips and gates correctly | rig (fixture audio) | T-0106 |
 | Device absent degrades, no crash | host (injected failure) | T-0107 |
 | End-to-end turn latency | rig (timestamps) | T-0108 |
+| Unknown backend hard-errors; setup returns `False` | host | T-0109 |

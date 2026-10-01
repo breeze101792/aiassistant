@@ -163,3 +163,39 @@ class TestMalformedInput:
         bridge = Bridge(url=url, on_message=lambda t, p: received.append(p))
         bridge._handle_message('{"status": "registered"}')
         assert received == []
+
+
+class TestConnectedMeansSubscribed:
+    """"connected" must fire only after the subscription replay.
+
+    A client that reacts to "connected" by publishing a resync request would
+    otherwise race forwarder registration on reconnect. The replay must be
+    queued on the socket before the connected notification is delivered.
+    """
+
+    @pytest.mark.asyncio
+    async def test_replay_is_sent_before_connected_is_reported(self, server):
+        bus, url = server
+        timeline = []
+        bridge = Bridge(url=url, name="orb")
+        bridge._subscriptions.add("resync.topic")
+
+        real_send = bridge._send
+        real_notify = bridge._notify_state
+
+        async def recording_send(frame, require_connection=True):
+            if frame.get("action") == "subscribe":
+                timeline.append(("subscribe", frame["topic"]))
+            return await real_send(frame, require_connection)
+
+        bridge._send = recording_send
+        bridge._notify_state = lambda state: timeline.append(("state", state)) or real_notify(state)
+
+        await bridge.connect()
+
+        states = [i for i, item in enumerate(timeline) if item[0] == "state" and item[1] == "connected"]
+        replay = [i for i, item in enumerate(timeline) if item == ("subscribe", "resync.topic")]
+        assert states, "connected was never reported"
+        assert replay, "the subscription was not replayed"
+        assert max(replay) < min(states), "connected fired before the replay was sent"
+        await bridge.close()

@@ -163,6 +163,9 @@ def feed(model: OrbViewModel, topic: str, payload: dict) -> None:
 _FEED_HANDLERS = {
     topics.VOICE_STATE: lambda m, p: m.on_voice_state(p),
     topics.VOICE_LEVEL: lambda m, p: m.on_level(p),
+    # Speech the user said is shown as their turn. This is what makes voice
+    # input visible; the frontends only add typed input optimistically.
+    topics.VOICE_TRANSCRIBED: lambda m, p: m.on_user_input(p),
     topics.AGENT_DELTA: lambda m, p: m.on_delta(p),
     topics.AGENT_FINAL: lambda m, p: m.on_final(p),
     topics.AGENT_TOOL_EVENT: lambda m, p: m.on_tool_event(p),

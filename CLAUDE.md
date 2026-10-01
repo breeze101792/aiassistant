@@ -101,3 +101,14 @@ Open, and stated as unverified rather than assumed:
 - Voice barge-in is off until acoustic echo cancellation exists
   (`docs/architecture/decisions/ADR-0011`).
 - The orb draws the painted-circle fallback, not the GLSL shader in `docs/ui/`.
+
+The mic pipeline is wired as of ADR-0018: `Capture → VadSegmenter →
+SegmentQueue → ASR worker → voice.transcribed`, each stage swappable by config
+(`voice.vad`, `voice.segmenter`, `voice.asr`, `voice.tts`) through
+`voice/factory.py`. ASR ships no hosted or paid service: the default is offline
+`faster_whisper` (`voice.asr.backend: faster_whisper`, needs the `asr-offline`
+extra, which `start.sh` installs; `device: cpu` is the default). `whisper_server`
+targets an OpenAI-compatible endpoint you run yourself and takes a generic
+optional key. The fused `halasr` backend was removed.
+End-to-end audio is unit tested with injected frames; it has not been exercised
+against a live microphone or a live endpoint.

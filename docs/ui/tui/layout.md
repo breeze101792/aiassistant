@@ -266,16 +266,17 @@ first line only, which is where the row starts.
 | `Ctrl+L` | Clear: empties the transcript locally (does not touch the store) |
 
 The pin and new-count logic mirrors [../layout.md § Autoscroll](../layout.md#autoscroll),
-with the jump-to-latest pill replaced by the `N new` status-bar marker (there is
-no clickable pill in a keyboard-only TUI).
+with the jump-to-latest pill replaced by the `N new` status-bar marker.
 
 ### Empty state
 
 ```
-No messages yet. Say "hi jarvis" or type below.
+No messages yet. Say "<first hotword>" or type below.
 ```
 
-Centered in the transcript region, `A_DIM`.
+The phrase is the first entry in `voice.hotwords`; with none configured, the
+"says" clause is dropped and it reads "No messages yet. Type below." Centered in
+the transcript region, `A_DIM`.
 
 ## Status bar
 
@@ -290,15 +291,35 @@ Esc stop  ^T mute  ^L clear  ^D quit  F1 help                        pinned
 | Left | Key hints for the controls relevant now | `Esc stop` in active states; `Esc unmute` when muted; `Esc dismiss` when an error row shows |
 | Right | `pinned` / `N new` | Pin state and count of rows arrived since unpinning |
 
+## Control bar (clickable)
+
+On a terminal at least `WIDE_COLS` (120) columns, the meter row carries two
+clickable buttons, right-aligned so they cannot collide with the meter:
+
+```
+mic [------------------------------]   0%                 [ stop ]  [ mute ]
+```
+
+| Button | Action | Bus effect |
+| --- | --- | --- |
+| `[ stop ]` | Interrupt the in-flight turn | Publish `command.agent.interrupt {}` |
+| `[ mute ]` / `[ unmute ]` | Toggle microphone mute; label follows the state | Publish `command.voice.mute {muted}` |
+
+The renderer records each label's hitbox as it draws; the app maps a mouse click
+through `Renderer.button_at`. Below 120 columns the buttons are hidden and the
+keyboard equivalents (`Esc`, `Ctrl+.`, `Ctrl+T`) remain. Mouse support is
+enabled with `curses.mousemask`; when a terminal has no mouse it degrades to
+keyboard-only.
+
 `F1` toggles a help overlay that lists every key; it is text, `attrPrimary`, and
 dismissed with `Esc` or `F1`. It is the TUI's accessible-names surface: the GUI
 gives every control an `Accessible.name`; the TUI states the key and its meaning
 in the help overlay and in the status bar.
 
-## Controls (keyboard only)
+## Controls
 
 The full map. It satisfies REQ-FRONTEND-007 (stop/interrupt, mute, scroll, clear,
-input, quit).
+input, quit). Keyboard works everywhere; the control bar adds mouse.
 
 | Key | Action | Bus effect |
 | --- | --- | --- |
@@ -310,6 +331,7 @@ input, quit).
 | `Esc` | Context-dependent, same order as the GUI ([interactions.md § Escape](../interactions.md#escape-resolution-order)), minus mouse steps | interrupt / dismiss / clear |
 | `Ctrl+T` | Toggle mute | Publish `command.voice.mute {muted}` |
 | `Ctrl+.` | Stop / interrupt a turn | Publish `command.agent.interrupt {}` |
+| Click `[ stop ]` / `[ mute ]` | Same as `Ctrl+.` / `Ctrl+T`, when the terminal is wide enough | as above |
 | `Ctrl+L` | Clear the transcript view | local |
 | `PgUp` `PgDn` `Up` `Down` `Home` `End` | Scroll the transcript | local |
 | `F1` | Toggle the help overlay | local |

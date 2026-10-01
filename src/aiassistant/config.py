@@ -64,8 +64,15 @@ DEFAULTS: dict = {
     "agent": {
         "harness": "native",
         "persona": (
-            "You are a smart, detail-oriented assistant. Always think step by step.\n"
-            "Match the user's language. Be concise. Use tools when available.\n"
+            "You are Jarvis, a conversational voice assistant. Speak the way a "
+            "person talks: natural, warm, and direct. Keep every reply to one "
+            "short paragraph. Never use more than five sentences, even if the "
+            "user asks for more detail; offer to continue instead of writing "
+            "more. Never use emoji, markdown, headings, or bullet lists. Do not "
+            "read code, URLs, or file paths aloud. Match the user's language. "
+            "When a tool is needed, use it and answer with the result in your "
+            "own words. If a request is unclear, ask one short question instead "
+            "of guessing.\n"
         ),
         "llm": {
             "provider": "ollama",
@@ -103,18 +110,42 @@ DEFAULTS: dict = {
         "max_pending": 100,
     },
     "voice": {
-        "listen": {"mode": "open"},
-        "backend": "stub",
-        "recognizer": "whisper",
-        "hotwords": ["hey jarvis"],
-        "endpoint_silence_ms": 2000,
+            "listen": {"mode": "open"},
+            "hotwords": ["hey jarvis"],
+            "endpoint_silence_ms": 2000,
+            # After the wake phrase, follow-up utterances are accepted without
+            # repeating it, until this much quiet time passes (wake mode only).
+            "wake_window_ms": 8000,
+            # Keep the mic gated this long after playback, so the speaker's tail
+            # is not captured as a new utterance (the assistant hearing itself).
+            "echo_guard_ms": 400,
         "speak_text_turns": False,
         "barge_in": {"enabled": False},
-    },
-    "voice_tts": {
-        "backend": "text",
-        "voice": "en-US-AriaNeural",
-        "speed": 1.0,
+        "vad": {"backend": "energy", "energy_threshold": 0.02, "aggressiveness": 3},
+        "segmenter": {
+            "preroll_ms": 200,
+            "min_utterance_ms": 100,
+            "max_utterance_ms": 30000,
+            # Speech must persist this long to open a segment, so room-noise
+            # clicks do not trigger a transcription.
+            "onset_ms": 100,
+        },
+        "asr": {
+            "backend": "faster_whisper",
+            "model": "base",
+            # faster_whisper only. CTranslate2's "auto" can select CUDA and then
+            # fail without the CUDA runtime libs, so cpu is the safe default;
+            # set device: cuda to opt in.
+            "device": "cpu",
+            "compute_type": "int8",
+            # whisper_server only; generic, not tied to any provider. A
+            # self-hosted server ignores the key.
+            "base_url": "",
+            "api_key": "",
+            "api_key_env": "ASR_API_KEY",
+            "language": "",
+        },
+        "tts": {"backend": "edge_tts", "voice": "en-US-AriaNeural", "speed": 1.0},
     },
     "vision": {
         "backend": "stub",
@@ -163,7 +194,7 @@ REMOVED_SECTIONS = {"canvas"}
 
 # Old key -> new key, within the mapped section.
 LEGACY_KEYS = {
-    "voice": {"recognizer": "recognizer", "hotwords": "hotwords"},
+    "voice": {"hotwords": "hotwords"},
 }
 
 # Units or names that differ between old and new.
@@ -171,6 +202,59 @@ LEGACY_KEYS = {
 LEGACY_SCALE = {
     ("voice", "silence_timeout"): ("endpoint_silence_ms", 1000),
 }
+
+# Keys that moved to a different dotted path. Processed after LEGACY_SECTIONS,
+# so a section rename and a per-key move compose: ``mouth`` becomes ``voice_tts``
+# first, then ``voice_tts.backend`` moves to ``voice.tts.backend``. The old
+# value survives verbatim, including ``halasr``, so ``voice.factory`` can report
+# the ADR-0018 error rather than a user silently getting the stub.
+LEGACY_MOVES = (
+    ("voice.backend", "voice.asr.backend"),
+    ("voice_tts.backend", "voice.tts.backend"),
+    ("voice_tts.voice", "voice.tts.voice"),
+    ("voice_tts.speed", "voice.tts.speed"),
+)
+
+# Top-level sections that were fully superseded by LEGACY_MOVES and are dropped
+# once their keys have moved.
+LEGACY_MOVED_SECTIONS = ("voice_tts",)
+
+# Keys with no successor, dropped with one warning. ``voice.recognizer`` was
+# meaningful only to the removed halasr backend (ADR-0018).
+LEGACY_DROPPED = {
+    ("voice", "recognizer"): "halasr-only; use voice.asr.backend (ADR-0018)",
+}
+
+# Distinguishes "absent" from a stored None while walking dotted paths.
+_MISSING = object()
+
+
+def _get_dotted(config: dict, path: str):
+    target = config
+    for part in path.split("."):
+        if not isinstance(target, dict) or part not in target:
+            return _MISSING
+        target = target[part]
+    return target
+
+
+def _set_dotted(config: dict, path: str, value) -> None:
+    """Set a dotted path, creating intermediate dicts as needed."""
+    parts = path.split(".")
+    target = config
+    for part in parts[:-1]:
+        target = target.setdefault(part, {})
+    target[parts[-1]] = value
+
+
+def _delete_dotted(config: dict, path: str) -> None:
+    parts = path.split(".")
+    target = config
+    for part in parts[:-1]:
+        target = target.get(part)
+        if not isinstance(target, dict):
+            return
+    target.pop(parts[-1], None)
 
 
 def migrate_legacy(config: dict) -> dict:
@@ -195,6 +279,31 @@ def migrate_legacy(config: dict) -> dict:
                     mapped = new_key
                 target.setdefault(mapped, value)
 
+    for (section, key), reason in LEGACY_DROPPED.items():
+        block = config.get(section)
+        if isinstance(block, dict) and key in block:
+            block.pop(key)
+            logger.warning(
+                "Config %s.%s is deprecated and was dropped: %s", section, key, reason
+            )
+
+    for old_path, new_path in LEGACY_MOVES:
+        value = _get_dotted(config, old_path)
+        if value is _MISSING:
+            continue
+        _delete_dotted(config, old_path)
+        if _get_dotted(config, new_path) is _MISSING:
+            _set_dotted(config, new_path, value)
+            logger.warning("Config %s is deprecated; use %s", old_path, new_path)
+        else:
+            logger.warning("Config %s is deprecated; keeping %s", old_path, new_path)
+
+    for section in LEGACY_MOVED_SECTIONS:
+        block = config.get(section)
+        if isinstance(block, dict):
+            config.pop(section)
+            logger.warning("Config section %r is deprecated; use 'voice.tts'", section)
+
     for removed in REMOVED_SECTIONS:
         if removed in config:
             config.pop(removed)
@@ -206,11 +315,7 @@ def migrate_legacy(config: dict) -> dict:
 def apply_overrides(config: dict, overrides: dict) -> None:
     """Apply dotted-key overrides, creating intermediate dicts as needed."""
     for dotted_key, value in overrides.items():
-        parts = dotted_key.split(".")
-        target = config
-        for part in parts[:-1]:
-            target = target.setdefault(part, {})
-        target[parts[-1]] = value
+        _set_dotted(config, dotted_key, value)
 
 
 # The local config file, relative to the working directory. It is ignored by

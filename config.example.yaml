@@ -17,8 +17,7 @@ agent:
   # harness could be added. See ADR-0004.
   harness: native
   persona: |
-    You are a smart, detail-oriented assistant. Always think step by step.
-    Match the user's language. Be concise. Use tools when available.
+    You are Jarvis, a conversational voice assistant. Speak the way a person talks: natural, warm, and direct. Keep every reply to one short paragraph. Never use more than five sentences, even if the user asks for more detail; offer to continue instead of writing more. Never use emoji, markdown, headings, or bullet lists. Do not read code, URLs, or file paths aloud. Match the user's language. When a tool is needed, use it and answer with the result in your own words. If a request is unclear, ask one short question instead of guessing.
   llm:
     provider: ollama
     model: qwen3:latest
@@ -56,20 +55,61 @@ voice:
   listen:
     # ptt (push-to-talk) | open (always listening) | wake (wake phrase gates)
     mode: open
-  backend: stub
-  recognizer: whisper          # whisper | funasr (only used with backend: halasr)
   hotwords: ["hey jarvis"]
   endpoint_silence_ms: 2000
+  # Wake mode only: after the wake phrase, follow-up utterances are accepted
+  # without repeating it, until this much quiet time passes.
+  wake_window_ms: 8000
+  # After the assistant finishes speaking, keep the mic gated this long so the
+  # speaker's tail is not heard and transcribed as a new turn (echo guard).
+  echo_guard_ms: 400
   speak_text_turns: false
   barge_in:
     # Voice barge-in needs echo cancellation. Without it the assistant hears
     # itself and self-triggers. See docs/architecture/decisions/ADR-0011.
     enabled: false
-
-voice_tts:
-  backend: text
-  voice: "en-US-AriaNeural"
-  speed: 1.0
+  vad:
+    # energy (default, numpy only) | webrtc (needs the `vad` extra)
+    backend: energy
+    energy_threshold: 0.02
+    aggressiveness: 3
+  segmenter:
+    # Pre-roll keeps a word onset from being clipped; min rejects an energy
+    # spike; max force-emits so a stuck VAD cannot grow memory without bound;
+    # onset requires speech to persist before a segment opens (noise rejection).
+    preroll_ms: 200
+    min_utterance_ms: 100
+    max_utterance_ms: 30000
+    onset_ms: 100
+  asr:
+    # Presets set this block (and tts below); per-stage keys are the only truth.
+    #   --audio:    asr.backend=whisper_server, tts.backend=edge_tts
+    #   --offline:  asr.backend=faster_whisper, tts.backend=text
+    # Backends, none of which needs a paid service:
+    #   faster_whisper  offline, runs locally (default); needs the `asr-offline`
+    #                   extra; the model downloads once on first use
+    #   whisper_server  your own self-hosted Whisper HTTP server (keyless);
+    #                   set base_url, for example http://127.0.0.1:8080/v1
+    #   whisper | funasr | stub
+    # An unknown value fails voice setup, it does not fall back.
+    backend: faster_whisper
+    model: base
+    # faster_whisper only. "auto" can pick CUDA and then fail without the CUDA
+    # runtime libs; cpu is the safe default, cuda is opt-in.
+    device: cpu
+    compute_type: int8
+    # whisper_server only: the endpoint. There is no hosted default.
+    base_url: ""
+    # Optional. A self-hosted server ignores the key, so it is normally blank.
+    # `api_key_env` names an environment variable to fall back to.
+    api_key: ""
+    api_key_env: "ASR_API_KEY"
+    language: ""
+  tts:
+    # Backends: edge_tts (online) | text (offline, prints the text).
+    backend: edge_tts
+    voice: "en-US-AriaNeural"
+    speed: 1.0
 
 vision:
   backend: stub

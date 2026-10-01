@@ -169,7 +169,11 @@ class TestPersona:
 
     def test_default_prompt(self):
         p = Persona('')
-        assert 'smart' in p.get_system_prompt() or 'detail-oriented' in p.get_system_prompt()
+        prompt = p.get_system_prompt()
+        # The default is a conversational voice assistant.
+        assert 'conversational' in prompt
+        assert 'emoji' in prompt
+        assert 'voice' in prompt
 
     def test_name_extraction(self):
         p = Persona('You are Jarvis. Be helpful.')

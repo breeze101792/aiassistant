@@ -14,7 +14,7 @@ on-target audio rig (loopback or fixture) · `inspection`.
 | REQ-VOICE-001 | Accept speech as input and transcribe it. | A spoken utterance while listening yields a transcript published on the bus within the configured finalize window. | [S] | host (mock), rig |
 | REQ-VOICE-002 | Produce spoken audio output. | A voice-originated turn produces audio on the configured output device; spoken text equals the transcript text. | [S] | rig, mock |
 | REQ-VOICE-003 | Turn latency is bounded and measurable. | End-of-speech to first output sample ≤ `voice.turn_latency_target_ms` on the reference machine with a healthy harness. | [A] | rig |
-| REQ-VOICE-004 | STT and TTS backends are config-selectable. | Changing `voice.asr.backend` or `voice.tts.backend` and restarting selects another backend with no code change; an unknown value falls back safely and reports an error. | [S] | host, mock |
+| REQ-VOICE-004 | STT and TTS backends are config-selectable. | Changing `voice.asr.backend` or `voice.tts.backend` and restarting selects another backend with no code change; an unknown value fails voice setup with an error naming the value, and the assistant continues text-only (REQ-BACKEND-002). | [S] | host, mock |
 | REQ-VOICE-005 | Audio devices are selectable. | Input and output devices are selectable by name or index in config; an absent device is reported and falls back to the system default. | [A] | host, mac, linux |
 | REQ-VOICE-006 | No self-feedback on the MVP path. | While TTS plays, the mic does not produce a new turn (half-duplex). | [A] | rig, mock |
 

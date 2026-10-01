@@ -102,8 +102,8 @@ class TestLegacyMigration:
         }
         migrated = migrate_legacy(dict(raw))
         assert migrated["agent"]["persona"] == "X"
-        assert migrated["voice"]["backend"] == "whisper"
-        assert migrated["voice_tts"]["backend"] == "edge_tts"
+        assert migrated["voice"]["asr"]["backend"] == "whisper"
+        assert migrated["voice"]["tts"]["backend"] == "edge_tts"
         assert migrated["tools"]["sandbox_default"] is True
         assert migrated["vision"]["backend"] == "opencv"
         assert migrated["messaging"]["telegram_token"] == "t"
@@ -132,6 +132,86 @@ class TestLegacyMigration:
             "brain": {"persona": "old"},
         }))
         assert migrated["agent"]["persona"] == "new"
+
+
+class TestAudioPipelineMigration:
+    """ADR-0018 migrated the flat voice keys to per-stage sections.
+
+    The old value survives migration verbatim, including ``halasr``, so the
+    factory can report the removal error instead of a user silently getting the
+    stub. Each row is pinned here because a top-level-only map would drop a real
+    user's config.
+    """
+
+    @pytest.mark.parametrize("legacy", ["stub", "whisper", "funasr"])
+    def test_voice_backend_moves_to_voice_asr_backend(self, legacy):
+        migrated = migrate_legacy(dict({"voice": {"backend": legacy}}))
+        assert migrated["voice"]["asr"]["backend"] == legacy
+        assert "backend" not in migrated["voice"], "the flat key is consumed"
+
+    def test_ears_backend_composes_with_the_move(self):
+        """``ears`` -> ``voice``, then ``voice.backend`` -> ``voice.asr.backend``."""
+        migrated = migrate_legacy(dict({"ears": {"backend": "whisper"}}))
+        assert migrated["voice"]["asr"]["backend"] == "whisper"
+
+    def test_recognizer_is_dropped_not_migrated(self, caplog):
+        from aiassistant.config import migrate_legacy
+
+        with caplog.at_level("WARNING"):
+            migrated = migrate_legacy(dict({"voice": {"recognizer": "whisper"}}))
+        assert "recognizer" not in migrated["voice"]
+        assert migrated["voice"] == {}
+        assert any("recognizer" in record.message for record in caplog.records), (
+            "dropping a key must warn, not silently discard"
+        )
+
+    def test_halasr_survives_migration_for_the_factory_to_reject(self):
+        """The factory, not the migrator, owns the ADR-0018 hard error."""
+        from aiassistant.voice.factory import VoiceConfigError, create_asr
+
+        migrated = migrate_legacy(dict({"voice": {"backend": "halasr"}}))
+        assert migrated["voice"]["asr"]["backend"] == "halasr"
+        with pytest.raises(VoiceConfigError, match="removed in ADR-0018"):
+            create_asr(migrated["voice"]["asr"])
+
+    def test_voice_tts_section_moves_to_voice_tts(self):
+        migrated = migrate_legacy(dict({
+            "voice_tts": {"backend": "text", "voice": "v", "speed": 1.5},
+        }))
+        assert migrated["voice"]["tts"] == {
+            "backend": "text", "voice": "v", "speed": 1.5,
+        }
+        assert "voice_tts" not in migrated, "the superseded section is dropped"
+
+    def test_mouth_backend_composes_with_the_move(self):
+        migrated = migrate_legacy(dict({"mouth": {"backend": "text"}}))
+        assert migrated["voice"]["tts"]["backend"] == "text"
+
+    def test_silence_timeout_scales_to_endpoint_silence_ms(self):
+        """``ears.silence_timeout`` is seconds; the new key is milliseconds."""
+        migrated = migrate_legacy(dict({"ears": {"silence_timeout": 3}}))
+        assert migrated["voice"]["endpoint_silence_ms"] == 3000
+
+    def test_endpoint_silence_ms_is_the_segmenter_source(self):
+        """The module reads ``voice.endpoint_silence_ms`` into the segmenter."""
+        from aiassistant.bus.bus import MessageBus
+        from aiassistant.voice.module import VoiceModule
+
+        raw = migrate_legacy(dict({"ears": {"silence_timeout": 3}}))
+        mod = VoiceModule(MessageBus(), {"voice": {"backend": "stub",
+                                                   **raw["voice"]}})
+        assert mod.endpoint_silence_ms == 3000
+
+    def test_a_new_stage_key_wins_over_a_legacy_one(self, caplog):
+        migrated = migrate_legacy(dict({
+            "voice": {"asr": {"backend": "funasr"}, "backend": "whisper"},
+        }))
+        assert migrated["voice"]["asr"]["backend"] == "funasr"
+
+    def test_the_canonical_sections_are_all_present_in_defaults(self):
+        for stage in ("vad", "segmenter", "asr", "tts"):
+            assert stage in DEFAULTS["voice"], stage
+
 
 
 class TestAgentsMap:

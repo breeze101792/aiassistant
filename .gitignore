@@ -129,7 +129,12 @@ celerybeat.pid
 
 # Environments
 .env
+# Per-host virtual envs. A venv holds absolute interpreter symlinks, so it is
+# not portable; start.sh names it .venv_<hostname> for exactly that reason.
 .venv
+.venv_*
+.venv.broken
+.venv_*.broken*
 env/
 venv/
 ENV/
