@@ -59,6 +59,11 @@ DEFAULT_WAKE_WINDOW_MS = 8000
 # hears itself and starts a turn).
 DEFAULT_ECHO_GUARD_MS = 400
 
+# How long to keep listening after the last speech frame before the utterance
+# is sent. A wait after speech, not a cap on how long the user may talk;
+# overridden by voice.endpoint_silence_ms.
+DEFAULT_ENDPOINT_SILENCE_MS = 3000
+
 
 class VoiceModule(BaseModule):
     """Speech in, speech out, and the state both share."""
@@ -84,7 +89,8 @@ class VoiceModule(BaseModule):
         self.asr_backend_name = asr_cfg.get("backend", voice_factory.DEFAULT_ASR_BACKEND)
         self.tts_backend_name = tts_cfg.get("backend", voice_factory.DEFAULT_TTS_BACKEND)
         self.hotwords = voice_cfg.get("hotwords", ["hey assistant"])
-        self.endpoint_silence_ms = voice_cfg.get("endpoint_silence_ms", 2000)
+        self.endpoint_silence_ms = voice_cfg.get(
+            "endpoint_silence_ms", DEFAULT_ENDPOINT_SILENCE_MS)
         self.wake_window_s = voice_cfg.get("wake_window_ms", DEFAULT_WAKE_WINDOW_MS) / 1000.0
         self.echo_guard_s = voice_cfg.get("echo_guard_ms", DEFAULT_ECHO_GUARD_MS) / 1000.0
         self.segmenter_cfg = segmenter_cfg

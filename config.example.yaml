@@ -56,7 +56,11 @@ voice:
     # ptt (push-to-talk) | open (always listening) | wake (wake phrase gates)
     mode: open
   hotwords: ["hey jarvis"]
-  endpoint_silence_ms: 2000
+  # How long to keep listening after you stop speaking before the turn is sent.
+  # Silence is measured from your last speech frame, so this is a wait after
+  # speech, not a limit on how long you may talk. Raise it if the assistant cuts
+  # in too soon; lower it if it feels slow to respond.
+  endpoint_silence_ms: 3000
   # Wake mode only: after the wake phrase, follow-up utterances are accepted
   # without repeating it, until this much quiet time passes.
   wake_window_ms: 8000

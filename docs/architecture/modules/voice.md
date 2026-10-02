@@ -135,6 +135,10 @@ The bus carries **no** PCM. Only events cross (REQ-VOICE-006).
   after a reply. Only an explicit user mute leaves the FSM in `MUTED`.
 - In wake mode, an open follow-up window accepts utterances without the phrase;
   it closes after `voice.wake_window_ms` of quiet or on an explicit mute.
+- An utterance ends only after `voice.endpoint_silence_ms` of silence measured
+  from the last speech frame, so a shorter mid-sentence pause stays in the same
+  utterance and speech duration is not capped (only `max_utterance_ms` bounds a
+  wedged VAD).
 - The state machine never enters an impossible combination.
 
 ## ERRORS

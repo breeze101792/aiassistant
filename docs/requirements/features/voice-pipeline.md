@@ -63,6 +63,19 @@ ASR worker — each behind one interface and one factory (`voice/factory.py`).
 The segmenter is the stage that did not exist before ADR-0018: nothing called
 `on_utterance`, so the mic produced a level and no transcript.
 
+### Turn boundary (the wait after you stop)
+
+`voice.endpoint_silence_ms` (default 3000) is how long the segmenter keeps
+listening after your **last speech frame** before it sends the turn. It is a
+wait measured from when you stop, not a cap on how long you may talk: you can
+speak for as long as you like, and the timer only starts once the VAD stops
+hearing speech. A natural mid-sentence breath shorter than this stays in the
+same utterance. Raise it if the assistant cuts in too soon; lower it if it feels
+slow to respond. `voice.segmenter.onset_ms` is the separate, much shorter
+threshold that rejects a room-noise click before a segment opens, and
+`voice.segmenter.max_utterance_ms` is the only true duration cap (a safety bound
+on a wedged VAD, default 30 s).
+
 ## States
 
 One duplex finite state machine, published as `voice.state`:
@@ -133,6 +146,17 @@ missed in the first draft; it is required, not optional.
 The default detector (`AsrHotwordDetector`, `voice/wake.py`) matches configured
 wake phrases against ASR output. It adds no new dependency. The cost is that ASR
 runs continuously, and detection is only as fast as a segment.
+
+When the detector is consulted depends on `voice.listen.mode`:
+
+| Mode | Phrase required | Behavior |
+| --- | --- | --- |
+| `open` | no | Always listening. Every utterance is a turn; the detector accepts all (`AlwaysAwakeDetector`). |
+| `wake` | yes | The phrase gates the turn. Speech without it is ignored; the phrase is stripped from the command. |
+| `ptt` | no | The mic is armed by the user, so whatever is said while armed is the command. |
+
+If the assistant answers everything it hears, the mode is `open`. Set
+`voice.listen.mode: wake` to require the phrase.
 
 Hearing the phrase opens a **follow-up window** (wake mode): the next utterances
 are accepted without repeating the phrase, so a conversation flows naturally.

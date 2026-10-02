@@ -112,7 +112,10 @@ DEFAULTS: dict = {
     "voice": {
             "listen": {"mode": "open"},
             "hotwords": ["hey jarvis"],
-            "endpoint_silence_ms": 2000,
+            # How long to keep listening after you stop speaking before the
+            # turn is sent. Silence is measured from the last speech frame, so
+            # this is a wait after speech, not a cap on how long you may talk.
+            "endpoint_silence_ms": 3000,
             # After the wake phrase, follow-up utterances are accepted without
             # repeating it, until this much quiet time passes (wake mode only).
             "wake_window_ms": 8000,

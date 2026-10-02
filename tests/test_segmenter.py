@@ -392,3 +392,54 @@ class TestOnsetRejection:
             for _ in range(2):
                 seg.feed(tagged_frame(0x00))
             assert emitted == []
+
+
+class TestHumanPauseTolerance:
+    """A person pauses mid-sentence. A pause shorter than endpoint_silence_ms
+    must not end the utterance; only the full silence run does.
+
+    This is the "time to finish my sentence" behavior: the assistant waits out
+    a natural breath instead of cutting in and sending a half-sentence turn.
+    """
+
+    def test_a_mid_sentence_pause_shorter_than_the_endpoint_is_kept(self):
+        endpoint_ms = 3000
+        # Speak, pause for 1 s (well under the endpoint), speak again, then a
+        # full endpoint run of silence.
+        seg, _, emitted = collect_segmenter(
+            [True] * 10 + [False] * frames_for(1000)
+            + [True] * 10 + [False] * frames_for(endpoint_ms),
+            endpoint_silence_ms=endpoint_ms,
+        )
+        for _ in range(10):
+            seg.feed(tagged_frame(0x80))
+        for _ in range(frames_for(1000)):
+            seg.feed(tagged_frame(0x00))
+        assert emitted == [], "a 1 s breath must not end the utterance"
+        for _ in range(10):
+            seg.feed(tagged_frame(0x80))
+        for _ in range(frames_for(endpoint_ms)):
+            seg.feed(tagged_frame(0x00))
+        assert len(emitted) == 1, "only the full silence run ends it"
+        # Both speech runs are in the one utterance.
+        tags = [emitted[0][i * BYTES_PER_FRAME]
+                for i in range(len(emitted[0]) // BYTES_PER_FRAME)]
+        assert tags.count(0x80) == 20
+
+    def test_a_pause_at_the_endpoint_does_end_the_utterance(self):
+        endpoint_ms = 3000
+        seg, _, emitted = collect_segmenter(
+            [True] * 10 + [False] * frames_for(endpoint_ms),
+            endpoint_silence_ms=endpoint_ms,
+        )
+        for _ in range(10):
+            seg.feed(tagged_frame(0x80))
+        for _ in range(frames_for(endpoint_ms)):
+            seg.feed(tagged_frame(0x00))
+        assert len(emitted) == 1
+
+    def test_the_config_default_tolerates_a_long_human_pause(self):
+        """The shipped default must be long enough for a mid-sentence breath."""
+        from aiassistant.config import DEFAULTS
+
+        assert DEFAULTS["voice"]["endpoint_silence_ms"] >= 3000

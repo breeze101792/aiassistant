@@ -19,9 +19,12 @@ The five properties:
 import pytest
 
 from aiassistant.agent.persona import Persona
+from aiassistant.bus.bus import MessageBus
 from aiassistant.config import DEFAULTS
 from aiassistant.tui.render import Renderer
 from aiassistant.voice.state import VoiceState
+
+from conftest import build_voice_session
 
 # A short window keeps the timeout test fast; long enough that the task does not
 # fire before the test drives the next utterance.
@@ -307,3 +310,54 @@ class TestTuiEmptyState:
         assert Renderer(hotwords=[])._empty_text() == (
             "No messages yet. Type below."
         )
+
+
+class TestWakeModeGating:
+    """`wake` mode must ignore speech that does not contain the phrase.
+
+    Reported as "the hotword detect fails; it speaks what it listens". The cause
+    was `listen.mode: open`, where the detector accepts everything by design. In
+    `wake` mode the phrase is required, and the phrase is stripped from the
+    command.
+    """
+
+    @pytest.mark.asyncio
+    async def test_wake_mode_ignores_speech_without_the_phrase(self):
+        bus = MessageBus()
+        session = build_voice_session(bus, mode="wake")
+        await session.setup()
+        await session.start()
+        try:
+            session.speak("what is the weather")
+            assert session.turns == [], (
+                "without the wake phrase the turn must be ignored"
+            )
+        finally:
+            await session.stop()
+
+    @pytest.mark.asyncio
+    async def test_wake_mode_accepts_speech_with_the_phrase_and_strips_it(self):
+        bus = MessageBus()
+        session = build_voice_session(bus, mode="wake")
+        await session.setup()
+        await session.start()
+        try:
+            session.speak("hey jarvis what is the weather")
+            assert session.turns == ["what is the weather"], (
+                "the phrase is a gate and is removed from the command"
+            )
+        finally:
+            await session.stop()
+
+    @pytest.mark.asyncio
+    async def test_open_mode_accepts_speech_without_the_phrase(self):
+        """`open` is always-listening by design: no phrase is required."""
+        bus = MessageBus()
+        session = build_voice_session(bus, mode="open")
+        await session.setup()
+        await session.start()
+        try:
+            session.speak("what is the weather")
+            assert session.turns == ["what is the weather"]
+        finally:
+            await session.stop()

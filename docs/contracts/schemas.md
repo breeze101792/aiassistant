@@ -256,7 +256,7 @@ the reload policy below.
 
 | Section | Keys | Notes |
 | --- | --- | --- |
-| `voice` | `listen.mode` (`ptt`\|`open`\|`wake`), `hotwords`, `endpoint_silence_ms`, `wake_window_ms`, `speak_text_turns`, `barge_in.enabled`, `vad.backend`, `vad.energy_threshold`, `vad.aggressiveness`, `segmenter.preroll_ms`, `segmenter.min_utterance_ms`, `segmenter.max_utterance_ms`, `asr.backend`, `asr.model`, `asr.device`, `asr.compute_type`, `asr.base_url`, `asr.api_key`, `asr.api_key_env`, `asr.language`, `tts.backend`, `tts.voice`, `tts.speed` | ASR backends: faster_whisper (offline, default), whisper_server (self-hosted), whisper, funasr, stub; VAD: energy, webrtc; TTS: edge_tts, text (`features/voice-pipeline.md:79-80`) |
+| `voice` | `listen.mode` (`ptt`\|`open`\|`wake`), `hotwords`, `endpoint_silence_ms` (default 3000: silence before the turn is sent), `wake_window_ms`, `speak_text_turns`, `barge_in.enabled`, `vad.backend`, `vad.energy_threshold`, `vad.aggressiveness`, `segmenter.preroll_ms`, `segmenter.min_utterance_ms`, `segmenter.max_utterance_ms`, `segmenter.onset_ms`, `asr.backend`, `asr.model`, `asr.device`, `asr.compute_type`, `asr.base_url`, `asr.api_key`, `asr.api_key_env`, `asr.language`, `tts.backend`, `tts.voice`, `tts.speed` | ASR backends: faster_whisper (offline, default), whisper_server (self-hosted), whisper, funasr, stub; VAD: energy, webrtc; TTS: edge_tts, text (`features/voice-pipeline.md:79-80`) |
 | `tools` | `paths`, `timeout_s`, `sandbox_default`, `safe_paths`, `artifacts_path`, `max_retries` | Was `hands` (`config.yaml:55-61`) |
 | `vision` | `backend` (`stub`), `camera_index`, `vision_model` | Was `eyes`; stub only |
 | `messaging` | `backends` (`[]`), `telegram.token`, `telegram.allowed_users` | Was `chat`; disabled by default |
